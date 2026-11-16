@@ -151,7 +151,7 @@ fix(terminal): Windows 프로세스 트리 종료 누락 수정
 
 | 워크플로 | 트리거 | 하는 일 |
 |---|---|---|
-| [`ci.yml`](.github/workflows/ci.yml) | PR, main push | Windows·macOS에서 `npm ci` → lint → typecheck → test → build. 브랜치 보호용 단일 체크 `ci-passed` |
+| [`ci.yml`](.github/workflows/ci.yml) | PR, main push | Windows에서 `npm ci` → lint → typecheck → test → build. 브랜치 보호용 단일 체크 `ci-passed` |
 | [`pr-lint.yml`](.github/workflows/pr-lint.yml) | PR 생성·수정 | PR 제목 Conventional Commits 검사 |
 | [`auto-merge.yml`](.github/workflows/auto-merge.yml) | PR 라벨 변경 | `automerge` 라벨 → auto-merge(squash) 활성화. Dependabot patch/minor는 자동 승인 + 자동 머지 |
 | [`cd.yml`](.github/workflows/cd.yml) | main push, `v*` 태그 | Windows 설치 파일 빌드 → Actions artifact 업로드. 태그면 GitHub Release(draft) 생성 |

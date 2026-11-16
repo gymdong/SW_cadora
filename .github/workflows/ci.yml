@@ -25,8 +25,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # PRD: Windows 11 1차 지원, macOS 후속 → Windows가 필수, macOS는 호환성 확인용
-        os: [windows-latest, macos-latest]
+        # PRD: Windows 11 1차 지원. macOS 지원 시점에 macos-latest 추가
+        os: [windows-latest]
     steps:
       - uses: actions/checkout@v7
 
