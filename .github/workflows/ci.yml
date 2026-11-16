@@ -28,7 +28,7 @@ jobs:
         # PRD: Windows 11 1차 지원, macOS 후속 → Windows가 필수, macOS는 호환성 확인용
         os: [windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Detect Node project
         id: detect
