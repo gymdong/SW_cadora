@@ -47,7 +47,7 @@ jobs:
             echo "::notice::package.json 의 'dist' 스크립트가 없어 패키징을 건너뜁니다."
           fi
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         if: steps.detect.outputs.has_dist == 'true'
         with:
           node-version-file: .nvmrc
