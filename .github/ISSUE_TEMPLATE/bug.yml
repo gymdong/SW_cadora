@@ -1,0 +1,31 @@
+name: 버그 리포트
+description: 동작 오류 신고
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: 현상
+      description: 기대한 동작과 실제 동작
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: 재현 방법
+      placeholder: |
+        1. 워크스페이스 A 생성
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: 환경
+      placeholder: Windows 11 23H2 / 앱 버전 v0.1.0
+  - type: textarea
+    id: logs
+    attributes:
+      label: 로그
+      description: 토큰·비밀값은 반드시 가리고 붙여주세요.
+      render: shell

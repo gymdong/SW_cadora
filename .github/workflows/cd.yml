@@ -1,0 +1,98 @@
+name: CD
+
+# - main push: Windows 설치 파일을 빌드해 Actions artifact 로 업로드 (팀 내부 테스트용)
+# - v* 태그 push: 같은 빌드를 GitHub Release(draft)에 첨부
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  # electron-builder 의 directories.output 과 맞춘다.
+  DIST_DIR: release
+
+jobs:
+  package:
+    name: package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # macOS 지원 시점에 macos-latest 추가
+        os: [windows-latest]
+    outputs:
+      has_dist: ${{ steps.detect.outputs.has_dist }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect dist script
+        id: detect
+        run: |
+          if [ -f package.json ] && node -e "process.exit(require('./package.json').scripts?.dist ? 0 : 1)"; then
+            echo "has_dist=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_dist=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::package.json 의 'dist' 스크립트가 없어 패키징을 건너뜁니다."
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.detect.outputs.has_dist == 'true'
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install
+        if: steps.detect.outputs.has_dist == 'true'
+        run: npm ci
+
+      - name: Package
+        if: steps.detect.outputs.has_dist == 'true'
+        env:
+          # 코드 서명 인증서가 준비되면 secrets 로 주입 (없으면 미서명 빌드)
+          CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run dist
+
+      - uses: actions/upload-artifact@v4
+        if: steps.detect.outputs.has_dist == 'true'
+        with:
+          name: cadora-${{ matrix.os }}-${{ github.sha }}
+          path: |
+            ${{ env.DIST_DIR }}/*.exe
+            ${{ env.DIST_DIR }}/*.msi
+            ${{ env.DIST_DIR }}/*.zip
+            ${{ env.DIST_DIR }}/*.dmg
+            ${{ env.DIST_DIR }}/latest*.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: [package]
+    if: startsWith(github.ref, 'refs/tags/v') && needs.package.outputs.has_dist == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: dist-artifacts/**

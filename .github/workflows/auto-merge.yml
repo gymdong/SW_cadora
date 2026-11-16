@@ -1,0 +1,60 @@
+name: Auto Merge
+
+# PR 에 `automerge` 라벨을 붙이면 GitHub auto-merge(squash)를 켠다.
+# 실제 머지는 브랜치 보호 규칙(필수 리뷰 + ci-passed)이 모두 충족된 뒤에 GitHub 가 수행한다.
+# 라벨을 떼면 auto-merge 를 해제한다.
+#
+# 주의: GITHUB_TOKEN 으로 머지된 push 는 다른 워크플로(CD)를 트리거하지 않는다.
+#       main 머지 후 CD 가 돌아야 하면 repo secret `AUTOMERGE_TOKEN`(PAT 또는 GitHub App 토큰)을 등록한다.
+on:
+  pull_request:
+    types: [labeled, unlabeled, opened, reopened, ready_for_review]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  enable:
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      contains(github.event.pull_request.labels.*.name, 'automerge')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable auto-merge (squash)
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash --delete-branch "$PR_URL"
+
+  disable:
+    if: >-
+      github.event.action == 'unlabeled' &&
+      github.event.label.name == 'automerge'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Disable auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN || secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --disable-auto "$PR_URL"
+
+  dependabot:
+    # Dependabot 의 patch/minor 업데이트는 자동 승인 + auto-merge
+    if: github.event.action == 'opened' && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Approve and enable auto-merge
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr review --approve "$PR_URL"
+          gh pr merge --auto --squash "$PR_URL"

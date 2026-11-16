@@ -1,0 +1,28 @@
+name: 기능 요청 / 작업
+description: PRD 요구사항(FR) 단위 작업 또는 새 기능 제안
+labels: [feature]
+body:
+  - type: input
+    id: fr
+    attributes:
+      label: 관련 FR 번호
+      placeholder: FR-02
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 우선순위
+      options: [P0, P1, P2]
+    validations:
+      required: true
+  - type: textarea
+    id: desc
+    attributes:
+      label: 내용
+      description: 무엇을 만들고 왜 필요한지
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 수용 기준
+      placeholder: A 에서 로그아웃해도 B 의 로그인 상태가 유지된다.
