@@ -1,15 +1,17 @@
 name: Auto Merge
 
-# Draft 가 아닌 PR 은 열리는 즉시 GitHub auto-merge(squash)를 켠다.
+# dev 를 향하는 Draft 가 아닌 PR 은 열리는 즉시 GitHub auto-merge(squash)를 켠다.
 # 실제 머지는 브랜치 보호 규칙의 필수 체크(ci-passed, pr-title)가 통과한 뒤 GitHub 가 수행한다.
 # 머지를 보류하려면 PR 을 Draft 로 전환한다 (auto-merge 해제됨). Ready for review 로 바꾸면 다시 켜진다.
-# Dependabot 메이저 업데이트는 자동 머지하지 않는다 (수동 검토).
+# main(최종본) 으로의 PR 은 자동 머지하지 않는다 — 관리자가 merge commit 으로 직접 병합.
+# Dependabot 메이저 업데이트도 자동 머지하지 않는다 (수동 검토).
 #
-# 주의: GITHUB_TOKEN 으로 머지된 push 는 다른 워크플로(CD)를 트리거하지 않는다.
-#       main 머지 후 CD 가 돌아야 하면 repo secret `AUTOMERGE_TOKEN`(PAT 또는 GitHub App 토큰)을 등록한다.
+# 주의: GITHUB_TOKEN 으로 머지된 push 는 다른 워크플로(CI on dev push, Discord 머지 알림)를 트리거하지 않는다.
+#       필요하면 repo secret `AUTOMERGE_TOKEN`(GitHub App 토큰 또는 PAT)을 등록한다.
 on:
   pull_request:
     types: [opened, reopened, ready_for_review, converted_to_draft]
+    branches: [dev]
 
 permissions:
   contents: write
