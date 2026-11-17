@@ -125,59 +125,74 @@ electron-builder 설정에 `directories.output: "release"`를 지정하세요.
 
 ### 브랜치
 
-- `main`: 항상 빌드 가능한 상태. 직접 push 금지, PR로만 병합.
-- 작업 브랜치: `<type>/<짧은-설명>` — 예: `feat/browser-partition`, `fix/pty-kill-tree`
+```
+feat/*, fix/* ──PR(squash, 자동 머지)──▶ dev ──PR(merge commit, 직접 병합)──▶ main ──태그──▶ Release
+hotfix/*      ──PR(직접 병합)──────────────────────────────────────────────▶ main
+```
+
+| 브랜치 | 역할 | 병합 방식 |
+|---|---|---|
+| `dev` (기본 브랜치) | 개발 통합. 모든 작업 PR의 대상 | squash, CI·PR 제목 통과 시 **자동 머지** |
+| `main` | 최종본(릴리스). `dev`·`hotfix/*`에서 온 PR만 허용 | **merge commit**, 관리자가 직접 병합 |
+| `<type>/<설명>` | 작업 브랜치 — 예: `feat/browser-partition`, `fix/pty-kill-tree` | — |
+
+- `dev`→`main`은 반드시 **"Create a merge commit"**으로 병합합니다. squash하면 두 브랜치 히스토리가 갈라져 다음 릴리스 PR에서 충돌이 납니다.
+- `hotfix/*`로 `main`을 고쳤다면 같은 변경을 `dev`에도 PR로 반영합니다.
 
 ### 커밋 / PR 제목
 
-[Conventional Commits](https://www.conventionalcommits.org/ko/) 형식을 사용합니다. squash merge 시 **PR 제목이 그대로 main의 커밋 메시지**가 되므로 PR 제목은 CI에서 검사합니다.
+[Conventional Commits](https://www.conventionalcommits.org/ko/) 형식을 사용합니다. squash merge 시 **PR 제목이 그대로 커밋 메시지**가 되므로 PR 제목은 CI에서 검사합니다.
 
 ```
 feat(workspace): 워크스페이스별 브라우저 세션 분리 (FR-02)
 fix(terminal): Windows 프로세스 트리 종료 누락 수정
+release: v0.1.0                      # dev → main
 ```
 
-허용 type: `feat` `fix` `docs` `style` `refactor` `perf` `test` `build` `ci` `chore` `revert`
+허용 type: `feat` `fix` `docs` `style` `refactor` `perf` `test` `build` `ci` `chore` `revert` `release`
 
 ### PR 흐름
 
 1. 이슈 생성 (기능 요청 템플릿에 FR 번호·우선순위 기입)
-2. 브랜치 생성 → 작업 → PR 생성 (PR 템플릿 작성)
+2. `dev`에서 브랜치 생성 → 작업 → `dev`로 PR 생성 (PR 템플릿 작성)
 3. PR을 열면 자동 머지가 켜지고, **CI(`ci-passed`)와 PR 제목 검사(`pr-title`)가 통과하면 자동으로 squash merge** 후 브랜치 삭제 (리뷰 승인은 필수 아님)
 4. 아직 머지되면 안 되는 PR은 **Draft**로 열거나 Draft로 전환 → 자동 머지 해제. Ready for review로 바꾸면 다시 켜짐
-5. Dependabot 메이저 업데이트는 자동 머지되지 않으므로 직접 검토 후 머지
+5. 릴리스할 때 `dev` → `main` PR(`release: vX.Y.Z`)을 열고 관리자가 merge commit으로 병합
+6. Dependabot은 `dev`로 PR을 올립니다. 메이저 업데이트는 자동 머지되지 않으므로 직접 검토 후 머지
 
 ## CI/CD
 
 | 워크플로 | 트리거 | 하는 일 |
 |---|---|---|
-| [`ci.yml`](.github/workflows/ci.yml) | PR, main push | Windows에서 `npm ci` → lint → typecheck → test → build. 브랜치 보호용 단일 체크 `ci-passed` |
-| [`pr-lint.yml`](.github/workflows/pr-lint.yml) | PR 생성·수정 | PR 제목 Conventional Commits 검사 |
-| [`auto-merge.yml`](.github/workflows/auto-merge.yml) | PR 생성·Draft 전환 | Draft가 아닌 PR에 auto-merge(squash) 활성화, Draft 전환 시 해제. Dependabot은 patch/minor만 자동 머지 |
+| [`ci.yml`](.github/workflows/ci.yml) | `dev`·`main` PR/push | Windows에서 `npm ci` → lint → typecheck → test → build. 브랜치 보호용 단일 체크 `ci-passed` |
+| [`pr-lint.yml`](.github/workflows/pr-lint.yml) | PR 생성·수정 | PR 제목 Conventional Commits 검사(`pr-title`), `main` PR 출처 검사(`source-branch`) |
+| [`auto-merge.yml`](.github/workflows/auto-merge.yml) | `dev` PR 생성·Draft 전환 | Draft가 아닌 PR에 auto-merge(squash) 활성화, Draft 전환 시 해제. Dependabot은 patch/minor만 |
 | [`discord-notify.yml`](.github/workflows/discord-notify.yml) | PR 열림·머지·닫힘, CI 실패 | Discord 채널로 알림 (`DISCORD_WEBHOOK_URL` 필요) |
-| [`cd.yml`](.github/workflows/cd.yml) | main push, `v*` 태그 | Windows 설치 파일 빌드 → Actions artifact 업로드. 태그면 GitHub Release(draft) 생성 |
+| [`cd.yml`](.github/workflows/cd.yml) | `main` push, `v*` 태그 | Windows 설치 파일 빌드 → Actions artifact 업로드. 태그면 GitHub Release(draft) 생성 |
+
+> 자동 머지는 `GITHUB_TOKEN`으로 이루어져 `dev` push CI와 "머지됨" Discord 알림을 트리거하지 않습니다. `main` 병합은 사람이 하므로 CD·알림이 정상 동작합니다.
 
 ### 릴리스
 
 ```bash
+# dev → main PR 을 merge commit 으로 병합한 뒤
+git checkout main && git pull
 npm version minor          # package.json 버전 갱신 + 태그 생성
 git push --follow-tags     # cd.yml 이 Release 초안 생성 → 확인 후 Publish
 ```
 
 ### 저장소 초기 설정 (관리자 1회)
 
-자동 머지가 동작하려면 GitHub 저장소 설정이 필요합니다.
-
-1. **Settings → General → Pull Requests**
-   - `Allow squash merging`만 켜고 나머지 merge 방식은 끄기
-   - `Allow auto-merge` 켜기
-   - `Automatically delete head branches` 켜기
-2. **Settings → Branches → `main` 보호 규칙**
-   - Require a pull request before merging (필수 승인 0명)
-   - Require status checks: `ci-passed`, `pr-title`
+1. **Settings → General**
+   - Default branch: `dev`
+   - Pull Requests: `Allow merge commits`·`Allow squash merging` 켜기, `Allow rebase merging` 끄기
+   - `Allow auto-merge`, `Automatically delete head branches` 켜기
+2. **Settings → Branches → 보호 규칙**
+   - `dev`: Require a pull request (필수 승인 0명), status checks `ci-passed`, `pr-title`
+   - `main`: Require a pull request (필수 승인 0명), status checks `ci-passed`, `pr-title`, `source-branch`
 3. **라벨 생성**: `feature`, `bug`
 4. **(선택) Secrets**
-   - `AUTOMERGE_TOKEN`: GITHUB_TOKEN으로 머지하면 main push가 CD를 트리거하지 않습니다. 머지 후 CD를 자동 실행하려면 `contents`/`pull-requests` 쓰기 권한이 있는 fine-grained PAT를 등록하세요.
+   - `AUTOMERGE_TOKEN`: GitHub App 토큰 또는 fine-grained PAT. 등록하면 `dev` 자동 머지 후에도 CI·알림이 트리거됩니다.
    - `DISCORD_WEBHOOK_URL`: Discord 서버 설정 → 연동 → 웹후크 → 새 웹후크(알림 받을 채널 선택) → URL 복사 후 `gh secret set DISCORD_WEBHOOK_URL`로 등록
    - `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`: Windows 코드 서명 인증서 (없으면 미서명 빌드)
 
@@ -187,21 +202,28 @@ git push --follow-tags     # cd.yml 이 Release 초안 생성 → 확인 후 Pub
 ```bash
 REPO=gymdong/SW_cadora
 
-gh repo edit $REPO \
-  --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false \
+gh api -X POST repos/$REPO/git/refs -f ref=refs/heads/dev \
+  -f sha=$(gh api repos/$REPO/git/ref/heads/main -q .object.sha)
+
+gh repo edit $REPO --default-branch dev \
+  --enable-squash-merge --enable-merge-commit --enable-rebase-merge=false \
   --enable-auto-merge --delete-branch-on-merge
 
-gh label create feature   --color 1D76DB -R $REPO
-gh label create bug       --color D73A4A -R $REPO
+gh label create feature --color 1D76DB -R $REPO
+gh label create bug     --color D73A4A -R $REPO
 
-gh api -X PUT repos/$REPO/branches/main/protection --input - <<'EOF'
+protect() {  # $1=branch, $2=checks JSON array
+  gh api -X PUT repos/$REPO/branches/$1/protection --input - <<EOF
 {
-  "required_status_checks": { "strict": true, "contexts": ["ci-passed", "pr-title"] },
+  "required_status_checks": { "strict": true, "contexts": $2 },
   "enforce_admins": false,
   "required_pull_request_reviews": { "required_approving_review_count": 0 },
   "restrictions": null
 }
 EOF
+}
+protect dev  '["ci-passed","pr-title"]'
+protect main '["ci-passed","pr-title","source-branch"]'
 ```
 
 </details>
