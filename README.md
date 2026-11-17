@@ -154,6 +154,7 @@ fix(terminal): Windows 프로세스 트리 종료 누락 수정
 | [`ci.yml`](.github/workflows/ci.yml) | PR, main push | Windows에서 `npm ci` → lint → typecheck → test → build. 브랜치 보호용 단일 체크 `ci-passed` |
 | [`pr-lint.yml`](.github/workflows/pr-lint.yml) | PR 생성·수정 | PR 제목 Conventional Commits 검사 |
 | [`auto-merge.yml`](.github/workflows/auto-merge.yml) | PR 생성·Draft 전환 | Draft가 아닌 PR에 auto-merge(squash) 활성화, Draft 전환 시 해제. Dependabot은 patch/minor만 자동 머지 |
+| [`discord-notify.yml`](.github/workflows/discord-notify.yml) | PR 열림·머지·닫힘, CI 실패 | Discord 채널로 알림 (`DISCORD_WEBHOOK_URL` 필요) |
 | [`cd.yml`](.github/workflows/cd.yml) | main push, `v*` 태그 | Windows 설치 파일 빌드 → Actions artifact 업로드. 태그면 GitHub Release(draft) 생성 |
 
 ### 릴리스
@@ -177,6 +178,7 @@ git push --follow-tags     # cd.yml 이 Release 초안 생성 → 확인 후 Pub
 3. **라벨 생성**: `feature`, `bug`
 4. **(선택) Secrets**
    - `AUTOMERGE_TOKEN`: GITHUB_TOKEN으로 머지하면 main push가 CD를 트리거하지 않습니다. 머지 후 CD를 자동 실행하려면 `contents`/`pull-requests` 쓰기 권한이 있는 fine-grained PAT를 등록하세요.
+   - `DISCORD_WEBHOOK_URL`: Discord 서버 설정 → 연동 → 웹후크 → 새 웹후크(알림 받을 채널 선택) → URL 복사 후 `gh secret set DISCORD_WEBHOOK_URL`로 등록
    - `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`: Windows 코드 서명 인증서 (없으면 미서명 빌드)
 
 <details>

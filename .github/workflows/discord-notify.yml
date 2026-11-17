@@ -1,0 +1,72 @@
+name: Discord Notify
+
+# PR 열림/머지/닫힘, CI 실패를 Discord 채널로 알린다.
+# repo secret `DISCORD_WEBHOOK_URL` 이 없으면 아무것도 하지 않는다.
+on:
+  pull_request:
+    types: [opened, ready_for_review, closed]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  pr:
+    if: >-
+      github.event_name == 'pull_request' &&
+      (github.event.action != 'opened' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send PR notification
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ACTION: ${{ github.event.action }}
+          MERGED: ${{ github.event.pull_request.merged }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          URL: ${{ github.event.pull_request.html_url }}
+          AUTHOR: ${{ github.event.pull_request.user.login }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "::notice::DISCORD_WEBHOOK_URL 미설정 — 건너뜀"; exit 0; fi
+          case "$ACTION" in
+            opened|ready_for_review) LABEL="🆕 새 PR";      COLOR=3447003 ;;
+            closed) if [ "$MERGED" = "true" ]; then LABEL="✅ 머지됨"; COLOR=3066993
+                    else LABEL="🚫 머지 없이 닫힘"; COLOR=9807270; fi ;;
+          esac
+          jq -n --arg label "$LABEL" --argjson color "$COLOR" --arg n "$NUMBER" --arg title "$TITLE" \
+                --arg url "$URL" --arg author "$AUTHOR" --arg branch "$HEAD → $BASE" --arg actor "$ACTOR" \
+            '{username: "Cadora GitHub", embeds: [{
+                title: "\($label) · #\($n) \($title)", url: $url, color: $color,
+                fields: [
+                  {name: "작성자", value: $author, inline: true},
+                  {name: "브랜치", value: $branch, inline: true},
+                  {name: "처리", value: $actor, inline: true}
+                ]}]}' \
+          | curl -fsS -H "Content-Type: application/json" -d @- "$WEBHOOK"
+
+  ci-failure:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send CI failure notification
+        env:
+          WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          COMMIT: ${{ github.event.workflow_run.head_commit.message }}
+          ACTOR: ${{ github.event.workflow_run.actor.login }}
+        run: |
+          if [ -z "$WEBHOOK" ]; then echo "::notice::DISCORD_WEBHOOK_URL 미설정 — 건너뜀"; exit 0; fi
+          jq -n --arg branch "$BRANCH" --arg url "$RUN_URL" --arg commit "${COMMIT%%$'\n'*}" --arg actor "$ACTOR" \
+            '{username: "Cadora GitHub", embeds: [{
+                title: "❌ CI 실패 · \($branch)", url: $url, color: 15158332,
+                fields: [
+                  {name: "커밋", value: $commit},
+                  {name: "작성자", value: $actor, inline: true}
+                ]}]}' \
+          | curl -fsS -H "Content-Type: application/json" -d @- "$WEBHOOK"
