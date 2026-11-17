@@ -1,14 +1,15 @@
 name: Auto Merge
 
-# PR 에 `automerge` 라벨을 붙이면 GitHub auto-merge(squash)를 켠다.
-# 실제 머지는 브랜치 보호 규칙(필수 리뷰 + ci-passed)이 모두 충족된 뒤에 GitHub 가 수행한다.
-# 라벨을 떼면 auto-merge 를 해제한다.
+# Draft 가 아닌 PR 은 열리는 즉시 GitHub auto-merge(squash)를 켠다.
+# 실제 머지는 브랜치 보호 규칙의 필수 체크(ci-passed, pr-title)가 통과한 뒤 GitHub 가 수행한다.
+# 머지를 보류하려면 PR 을 Draft 로 전환한다 (auto-merge 해제됨). Ready for review 로 바꾸면 다시 켜진다.
+# Dependabot 메이저 업데이트는 자동 머지하지 않는다 (수동 검토).
 #
 # 주의: GITHUB_TOKEN 으로 머지된 push 는 다른 워크플로(CD)를 트리거하지 않는다.
 #       main 머지 후 CD 가 돌아야 하면 repo secret `AUTOMERGE_TOKEN`(PAT 또는 GitHub App 토큰)을 등록한다.
 on:
   pull_request:
-    types: [labeled, unlabeled, opened, reopened, ready_for_review]
+    types: [opened, reopened, ready_for_review, converted_to_draft]
 
 permissions:
   contents: write
@@ -17,9 +18,10 @@ permissions:
 jobs:
   enable:
     if: >-
+      github.event.action != 'converted_to_draft' &&
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      contains(github.event.pull_request.labels.*.name, 'automerge')
+      github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
       - name: Enable auto-merge (squash)
@@ -29,9 +31,7 @@ jobs:
         run: gh pr merge --auto --squash --delete-branch "$PR_URL"
 
   disable:
-    if: >-
-      github.event.action == 'unlabeled' &&
-      github.event.label.name == 'automerge'
+    if: github.event.action == 'converted_to_draft'
     runs-on: ubuntu-latest
     steps:
       - name: Disable auto-merge
@@ -41,7 +41,7 @@ jobs:
         run: gh pr merge --disable-auto "$PR_URL"
 
   dependabot:
-    # Dependabot 의 patch/minor 업데이트는 자동 승인 + auto-merge
+    # Dependabot 의 patch/minor 업데이트만 auto-merge
     if: github.event.action == 'opened' && github.event.pull_request.user.login == 'dependabot[bot]'
     runs-on: ubuntu-latest
     steps:
@@ -50,11 +50,9 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Approve and enable auto-merge
+      - name: Enable auto-merge
         if: steps.meta.outputs.update-type != 'version-update:semver-major'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR_URL: ${{ github.event.pull_request.html_url }}
-        run: |
-          gh pr review --approve "$PR_URL"
-          gh pr merge --auto --squash "$PR_URL"
+        run: gh pr merge --auto --squash --delete-branch "$PR_URL"

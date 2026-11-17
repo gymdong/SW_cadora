@@ -143,9 +143,9 @@ fix(terminal): Windows 프로세스 트리 종료 누락 수정
 
 1. 이슈 생성 (기능 요청 템플릿에 FR 번호·우선순위 기입)
 2. 브랜치 생성 → 작업 → PR 생성 (PR 템플릿 작성)
-3. CI 통과 + 리뷰 1명 이상 승인
-4. **`automerge` 라벨**을 붙이면 조건 충족 시 자동으로 squash merge 후 브랜치 삭제
-5. 라벨을 떼면 자동 머지 취소
+3. PR을 열면 자동 머지가 켜지고, **CI(`ci-passed`)와 PR 제목 검사(`pr-title`)가 통과하면 자동으로 squash merge** 후 브랜치 삭제 (리뷰 승인은 필수 아님)
+4. 아직 머지되면 안 되는 PR은 **Draft**로 열거나 Draft로 전환 → 자동 머지 해제. Ready for review로 바꾸면 다시 켜짐
+5. Dependabot 메이저 업데이트는 자동 머지되지 않으므로 직접 검토 후 머지
 
 ## CI/CD
 
@@ -153,7 +153,7 @@ fix(terminal): Windows 프로세스 트리 종료 누락 수정
 |---|---|---|
 | [`ci.yml`](.github/workflows/ci.yml) | PR, main push | Windows에서 `npm ci` → lint → typecheck → test → build. 브랜치 보호용 단일 체크 `ci-passed` |
 | [`pr-lint.yml`](.github/workflows/pr-lint.yml) | PR 생성·수정 | PR 제목 Conventional Commits 검사 |
-| [`auto-merge.yml`](.github/workflows/auto-merge.yml) | PR 라벨 변경 | `automerge` 라벨 → auto-merge(squash) 활성화. Dependabot patch/minor는 자동 승인 + 자동 머지 |
+| [`auto-merge.yml`](.github/workflows/auto-merge.yml) | PR 생성·Draft 전환 | Draft가 아닌 PR에 auto-merge(squash) 활성화, Draft 전환 시 해제. Dependabot은 patch/minor만 자동 머지 |
 | [`cd.yml`](.github/workflows/cd.yml) | main push, `v*` 태그 | Windows 설치 파일 빌드 → Actions artifact 업로드. 태그면 GitHub Release(draft) 생성 |
 
 ### 릴리스
@@ -171,13 +171,11 @@ git push --follow-tags     # cd.yml 이 Release 초안 생성 → 확인 후 Pub
    - `Allow squash merging`만 켜고 나머지 merge 방식은 끄기
    - `Allow auto-merge` 켜기
    - `Automatically delete head branches` 켜기
-2. **Settings → Actions → General → Workflow permissions**
-   - `Allow GitHub Actions to create and approve pull requests` 켜기 (Dependabot 자동 승인용)
-3. **Settings → Branches → `main` 보호 규칙**
-   - Require a pull request before merging (승인 1명)
+2. **Settings → Branches → `main` 보호 규칙**
+   - Require a pull request before merging (필수 승인 0명)
    - Require status checks: `ci-passed`, `pr-title`
-4. **라벨 생성**: `automerge`, `feature`, `bug`
-5. **(선택) Secrets**
+3. **라벨 생성**: `feature`, `bug`
+4. **(선택) Secrets**
    - `AUTOMERGE_TOKEN`: GITHUB_TOKEN으로 머지하면 main push가 CD를 트리거하지 않습니다. 머지 후 CD를 자동 실행하려면 `contents`/`pull-requests` 쓰기 권한이 있는 fine-grained PAT를 등록하세요.
    - `WIN_CSC_LINK`, `WIN_CSC_KEY_PASSWORD`: Windows 코드 서명 인증서 (없으면 미서명 빌드)
 
@@ -191,10 +189,6 @@ gh repo edit $REPO \
   --enable-squash-merge --enable-merge-commit=false --enable-rebase-merge=false \
   --enable-auto-merge --delete-branch-on-merge
 
-gh api -X PUT repos/$REPO/actions/permissions/workflow \
-  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
-
-gh label create automerge --color 0E8A16 --description "조건 충족 시 자동 머지" -R $REPO
 gh label create feature   --color 1D76DB -R $REPO
 gh label create bug       --color D73A4A -R $REPO
 
@@ -202,7 +196,7 @@ gh api -X PUT repos/$REPO/branches/main/protection --input - <<'EOF'
 {
   "required_status_checks": { "strict": true, "contexts": ["ci-passed", "pr-title"] },
   "enforce_admins": false,
-  "required_pull_request_reviews": { "required_approving_review_count": 1 },
+  "required_pull_request_reviews": { "required_approving_review_count": 0 },
   "restrictions": null
 }
 EOF
