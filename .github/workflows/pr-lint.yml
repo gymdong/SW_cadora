@@ -28,4 +28,20 @@ jobs:
             ci
             chore
             revert
+            release
           requireScope: false
+
+  # main 으로는 dev(최종본)와 hotfix/* 브랜치에서 온 PR 만 허용한다.
+  source-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check source branch
+        env:
+          BASE: ${{ github.event.pull_request.base.ref }}
+          HEAD: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [ "$BASE" = "main" ] && [ "$HEAD" != "dev" ] && [[ "$HEAD" != hotfix/* ]]; then
+            echo "::error::main 으로는 dev 또는 hotfix/* 브랜치만 PR 할 수 있습니다. base 를 dev 로 바꿔주세요. (현재: $HEAD → $BASE)"
+            exit 1
+          fi
+          echo "OK: $HEAD → $BASE"
