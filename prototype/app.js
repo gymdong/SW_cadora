@@ -53,21 +53,29 @@
     moon: '<path d="M15.5 12.5A6.5 6.5 0 0 1 7.5 4.5a6.5 6.5 0 1 0 8 8z"/>',
     discord: '<path d="M4 4.5h12a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H9.5l-4 3v-3H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2z"/>',
   };
+  /** 색은 styles.css :root 토큰이 원본이다 (classic script 라 앞선 스타일시트가 적용된 뒤 실행된다) */
+  const rootCS = getComputedStyle(document.documentElement);
+  const tok = name => rootCS.getPropertyValue('--' + name).trim();
+  /** 그래프(SVG) 색 — SVG 속성에는 var()를 쓸 수 없어서 값으로 읽어 둔다 */
+  const G = { bg: tok('dark'), line: tok('dark-line'), idle: tok('dark-idle'), dim: tok('dark-dim'), mute: tok('dark-mute'), text: tok('dark-text'), hi: tok('dark-hi'), warn: tok('warn'), sim: tok('g-sim') };
+
   const ico = (n, s = 20, w = 1.7) => `<svg class="ico" width="${s}" height="${s}" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[n]}</svg>`;
 
   // ───────────────────────── 정적 데이터 ─────────────────────────
   const WS_SEED = [
-    { id: 'capstone', name: '캡스톤 팀플',    short: '캡', kind: 'team',     color: '#3b7cf5', members: ['minsu', 'jiyun', 'hyunwoo', 'prof'], lead: 'minsu', discord: '#캡스톤-팀플', unread: 5 },
-    { id: 'contest',  name: '공모전 기획서',   short: '공', kind: 'team',     color: '#f08c2e', members: ['minsu', 'jiyun', 'hyunwoo'], lead: 'jiyun', discord: '#공모전', unread: 2, sharedTabs: ['공모전 공지', '기획서 · Google Docs', 'Figma 시안'] },
-    { id: 'compiler', name: '컴파일러 과제 3', short: '컴', kind: 'personal', color: '#e0527d', members: ['minsu'] },
-    { id: 'vr',       name: 'VR 콘텐츠 과제',  short: 'VR', kind: 'personal', color: '#8b5cf6', members: ['minsu'] },
-    { id: 'os',       name: '운영체제 과제 2', short: '운', kind: 'personal', color: '#65a30d', members: ['jiyun'] },
-    { id: 'dbhw',     name: '데이터베이스 과제', short: '데', kind: 'personal', color: '#0ea5e9', members: ['hyunwoo'] },
+    { id: 'capstone', name: '캡스톤 팀플',    short: '캡', kind: 'team',     members: ['minsu', 'jiyun', 'hyunwoo', 'prof'], lead: 'minsu', discord: '#캡스톤-팀플', unread: 5 },
+    { id: 'contest',  name: '공모전 기획서',   short: '공', kind: 'team',     members: ['minsu', 'jiyun', 'hyunwoo'], lead: 'jiyun', discord: '#공모전', unread: 2, sharedTabs: ['공모전 공지', '기획서 · Google Docs', 'Figma 시안'] },
+    { id: 'compiler', name: '컴파일러 과제 3', short: '컴', kind: 'personal', members: ['minsu'] },
+    { id: 'vr',       name: 'VR 콘텐츠 과제',  short: 'VR', kind: 'personal', members: ['minsu'] },
+    { id: 'os',       name: '운영체제 과제 2', short: '운', kind: 'personal', members: ['jiyun'] },
+    { id: 'dbhw',     name: '데이터베이스 과제', short: '데', kind: 'personal', members: ['hyunwoo'] },
   ];
-  const NEW_COLORS = ['#d946ef', '#ca8a04', '#f43f5e', '#64748b'];
+  /** 워크스페이스 색: color = 식별색(점 · 다크 위 막대 · 테두리), ink = 흰 글자를 올리는 면 · 밝은 면 위 막대 */
+  WS_SEED.forEach(w => { w.color = tok('ws-' + w.id); w.ink = tok('ws-' + w.id + '-ink'); });
+  const NEW_COLORS = [1, 2, 3, 4].map(i => ({ color: tok('ws-new' + i), ink: tok('ws-new' + i + '-ink') }));
   const isTeamWs = id => { const w = WS_SEED.find(x => x.id === id); return !!w && w.kind === 'team'; };
-  const PEOPLE = { minsu: '#1f8fc7', jiyun: '#8a5cd6', hyunwoo: '#d9822b', prof: '#2e9e62' };
-  const GLOW = { minsu: '#56c2e6', jiyun: '#b18cf2', hyunwoo: '#f0a35e', prof: '#4fd08a' };
+  const PEOPLE = Object.fromEntries(['minsu', 'jiyun', 'hyunwoo', 'prof'].map(u => [u, tok('p-' + u)]));     // 아바타 면 (흰 글자)
+  const GLOW = Object.fromEntries(['minsu', 'jiyun', 'hyunwoo', 'prof'].map(u => [u, tok('glow-' + u)]));    // 다크 그래프
   const initial = u => (u === 'prof' ? '교' : U[u].name[0]);
   const STATUS_LABEL = { active: '활성', background: '백그라운드', sleep: '잠자기' };
 
@@ -375,7 +383,7 @@
     const pr = x.by && ui.names[x.by];
     return pr && pr.avatarUrl
       ? `<img class="pav" src="${esc(pr.avatarUrl)}" width="${size}" height="${size}" alt="">`
-      : `<span class="pav" style="width:${size}px;height:${size}px;background:${PEOPLE[x.presence.persona] || '#5b6470'}"></span>`;
+      : `<span class="pav" style="width:${size}px;height:${size}px;background:${PEOPLE[x.presence.persona] || 'var(--p-unknown)'}"></span>`;
   };
   function uniquePeople() {
     const seen = new Map();
@@ -517,7 +525,7 @@
       </header>
       <div class="body">
         <nav class="rail">
-          <button class="ws-av" style="background:${ws.color}" data-act="menu" data-m="ws" title="워크스페이스 전환">${esc(ws.short)}</button>
+          <button class="ws-av" style="background:${ws.ink}" data-act="menu" data-m="ws" title="워크스페이스 전환">${esc(ws.short)}</button>
           ${nav}
           <button class="me" data-act="seat-open" title="내 자리 바꾸기"><span class="av" style="background:${PEOPLE[ui.viewer]}">${initial(ui.viewer)}</span><span class="pres"></span></button>
           <div class="me-label">${esc(me.name)}<br>${esc(me.device)}</div>
@@ -550,7 +558,8 @@
     else if (E.server === 'running' && s !== 'active') parts.push('서버 실행 중');
     return { s, text: parts.join(' · ') };
   }
-  const statusDot = s => (s === 'active' ? '#2dd4bf' : s === 'background' ? '#d29922' : 'transparent;box-shadow:inset 0 0 0 1.5px rgba(230,237,243,.45)');
+  // 활성 = 청록, 백그라운드 = 채운 회색, 잠자기 = 빈 원 (노랑은 '충돌 가능'에만 쓴다)
+  const statusDot = s => (s === 'active' ? 'var(--accent-glow)' : s === 'background' ? 'var(--status-idle)' : 'transparent;box-shadow:inset 0 0 0 1.5px var(--status-idle)');
 
   // ───────────────────────── 작업공간 (FR-01~05 · FR-08) ─────────────────────────
   function tabsOf(v = ui.viewer, id = curId()) {
@@ -568,7 +577,7 @@
     const items = myWs().map(w => {
       const m = wsMeta(ui.viewer, w);
       return `<button class="s-item tall ${w.id === curId() ? 'on' : ''}" data-act="ws" data-id="${w.id}">
-        <span class="wsq" style="background:${w.color}">${esc(w.short)}</span>
+        <span class="wsq" style="background:${w.ink}">${esc(w.short)}</span>
         <span class="grow"><span class="nm">${esc(w.name)}</span><span class="mt"><i style="background:${statusDot(m.s)}"></i>${esc(m.text)}</span></span></button>`;
     }).join('');
     return `<div class="s-head" style="cursor:default">작업공간</div><div class="s-sec">내 워크스페이스</div>${items}
@@ -652,7 +661,7 @@
     }).join('');
     return `<div class="h-card">
       ${task ? `<div class="hc-sec">마감</div><button class="hc-task" data-act="task-open" data-id="${task.id}"><span class="grow">${esc(task.title)}</span><span class="dd ${task.due <= 3 ? 'soon' : ''}">${dday(task.due)}</span></button>
-        <div class="prog"><i style="width:${Math.round(taskDone(task) / task.items.length * 100)}%;background:${w.color}"></i></div>
+        <div class="prog"><i style="width:${Math.round(taskDone(task) / task.items.length * 100)}%;background:${w.ink}"></i></div>
         ${ui.openTask[ui.viewer] === task.id ? `<div class="hc-items">${checklist(task)}</div>` : ''}` : ''}
       ${E.downloads.length ? `<div class="hc-sec">받은 파일</div>${E.downloads.slice(-3).map(d => `<div class="dl-row">${ico('dl', 13)}<span class="grow">${esc(d.name)}</span><span class="mt">${esc(E.download)}</span></div>`).join('')}` : ''}
       <div class="hc-sec">다른 워크스페이스</div>${others || '<div class="mt">없음</div>'}
@@ -837,7 +846,7 @@
     }
     const togs = myWs().map(w => {
       const on = !ui.calHidden[ui.viewer].has(w.id);
-      return `<button class="cal-tog" data-act="cal-toggle" data-ws="${w.id}"><span class="box" style="border-color:${w.color};background:${on ? w.color : 'transparent'}">${on ? ico('check', 12, 2.6) : ''}</span>${esc(w.name)}</button>`;
+      return `<button class="cal-tog" data-act="cal-toggle" data-ws="${w.id}"><span class="box" style="border-color:${w.color};background:${on ? w.ink : 'transparent'}">${on ? ico('check', 12, 2.6) : ''}</span>${esc(w.name)}</button>`;
     }).join('');
     return `<div class="s-head" style="cursor:default">캘린더</div>
       <div class="mini"><div class="mini-h">${mid.getFullYear()}년 ${mid.getMonth() + 1}월</div>
@@ -858,7 +867,7 @@
     const allday = days.map(d => {
       const r = relDays(d);
       const dl = myTasks().filter(t => t.due === r && !ui.calHidden[ui.viewer].has(t.ws));
-      return `<div class="c">${dl.map(t => `<button class="chip-dl" style="background:${wsById(t.ws).color}" data-act="pop" data-k="task" data-id="${t.id}">마감 · ${esc(t.title.split(' · ')[0])}</button>`).join('')}</div>`;
+      return `<div class="c">${dl.map(t => `<button class="chip-dl" style="--ci:${wsById(t.ws).ink}" data-act="pop" data-k="task" data-id="${t.id}">마감 · ${esc(t.title.split(' · ')[0])}</button>`).join('')}</div>`;
     }).join('');
     const hours = [...Array(H1 - H0)].map((_, i) => { const h = H0 + i; return `<div class="h">${i === 0 ? '' : `${h < 12 ? '오전' : '오후'} ${((h + 11) % 12) + 1}시`}</div>`; }).join('');
     const cols = days.map(d => {
@@ -866,7 +875,7 @@
       const evs = evAll.filter(e => e.rel === r && !ui.calHidden[ui.viewer].has(e.ws)).map(e => {
         const past = r < 0 || (r === 0 && e.e <= nowH);
         const h = (e.e - e.s) * HPX - 3;
-        return `<button class="ev ${past ? 'past' : ''}" style="top:${(e.s - H0) * HPX + 1}px;height:${h}px;background:${wsById(e.ws).color}" data-act="pop" data-k="ev" data-id="${e.i}">
+        return `<button class="ev ${past ? 'past' : ''}" style="top:${(e.s - H0) * HPX + 1}px;height:${h}px;--c:${wsById(e.ws).color};--ci:${wsById(e.ws).ink}" data-act="pop" data-k="ev" data-id="${e.i}">
           <b>${esc(e.title)}</b>${h > 40 ? `${fmtHour(e.s)} – ${fmtHour(e.e)}${e.sub ? ' · ' + esc(e.sub) : ''}` : ''}</button>`;
       }).join('');
       const line = r === 0 && nowH >= H0 && nowH <= H1 ? `<div class="nowline" style="top:${(nowH - H0) * HPX}px"></div>` : '';
@@ -899,12 +908,12 @@
     if (p.k === 'ev') {
       const e = EVENTS[+p.id];
       const d = addDays(startOfDay(now()), e.rel);
-      title = e.title; color = wsById(e.ws).color;
+      title = e.title; color = wsById(e.ws).ink;
       meta = `${fmtDate(d)} · ${fmtHour(e.s)} – ${fmtHour(e.e)}<br>${esc(wsById(e.ws).name)}${e.sub ? ' · ' + esc(e.sub) : ''}`;
       task = e.task && taskById(e.task);
     } else {
       task = taskById(p.id);
-      title = `마감 · ${task.title}`; color = wsById(task.ws).color;
+      title = `마감 · ${task.title}`; color = wsById(task.ws).ink;
       meta = `${fmtDate(dueDate(task))} ${task.at} · ${dday(task.due)}<br>${esc(wsById(task.ws).name)}`;
     }
     const x = Math.max(8, Math.min(p.x + 12, window.innerWidth - 316));
@@ -913,7 +922,7 @@
       <div class="pt"><span class="sw" style="background:${color}"></span><div style="flex:1"><h3>${esc(title)}</h3><div class="meta">${meta}</div></div>
         <button class="icon-btn" data-act="pop-close" aria-label="닫기" style="width:26px;height:26px">${ico('x', 15)}</button></div>
       ${task ? `<div class="check-list"><div class="meta">${esc(task.title)} · 남은 일 ${task.items.length - taskDone(task)}개${wsById(task.ws).kind === 'team' ? ' · 팀원과 함께 보는 목록' : ''}</div>${checklist(task)}
-        <div class="prog"><i style="width:${Math.round(taskDone(task) / task.items.length * 100)}%;background:${wsById(task.ws).color}"></i></div></div>` : ''}
+        <div class="prog"><i style="width:${Math.round(taskDone(task) / task.items.length * 100)}%;background:${wsById(task.ws).ink}"></i></div></div>` : ''}
     </div>`;
   }
 
@@ -922,14 +931,14 @@
     const nowD = now();
     const nowH = nowD.getHours() + nowD.getMinutes() / 60;
     return myEvents().filter(e => e.rel === 0).sort((a, b) => a.s - b.s).map(e => ({
-      time: fmtHour(e.s), title: e.title, sub: `${wsById(e.ws).name}${e.sub ? ' · ' + e.sub : ''}`, color: wsById(e.ws).color,
+      time: fmtHour(e.s), title: e.title, sub: `${wsById(e.ws).name}${e.sub ? ' · ' + e.sub : ''}`, color: wsById(e.ws).color, ink: wsById(e.ws).ink,
       state: e.e <= nowH ? 'past' : e.s <= nowH ? 'now' : 'next',
     }));
   }
 
   function todayBlock() {
     const d = now();
-    const tl = todayItems().map(it => `<li class="${it.state}" style="--c:${it.color}" data-act="view" data-v="cal" title="${esc(it.sub)}">
+    const tl = todayItems().map(it => `<li class="${it.state}" style="--c:${it.color};--ci:${it.ink}" data-act="view" data-v="cal" title="${esc(it.sub)}">
         <span class="t">${it.time}</span><span class="n"></span><span class="l">${esc(it.title)}${it.state === 'now' ? '<span class="now-tag">지금</span>' : ''}</span></li>`).join('');
     const tasks = myTasks().slice().sort((a, b) => a.due - b.due).map(t => {
       const w = wsById(t.ws);
@@ -955,7 +964,7 @@
         const occHTML = occ.length ? `<span class="occ" title="${esc(occ.map(peerName).join(', '))} 접속 중">${occ.slice(0, 3).map(x => peerAv(x, 16)).join('')}</span>` : '';
         return `<button class="s-item" data-act="gsel" data-k="member" data-id="${m.user}"><span class="av sav" style="background:${PEOPLE[m.user]}">${initial(m.user)}</span>${esc(U[m.user].name)}${m.me ? ' (나)' : ''}${m.user === w.lead ? '<span class="lead">팀장</span>' : ''}${occHTML}<span class="r">${state}</span></button>`;
       }).join('');
-      const invites = st.team.invites.map(i => `<div class="s-item"><span class="av sav" style="background:#5b6470">?</span><span class="ellip">${esc(i.email)}</span><span class="r">초대 대기</span></div>`).join('');
+      const invites = st.team.invites.map(i => `<div class="s-item"><span class="av sav" style="background:var(--p-unknown)">?</span><span class="ellip">${esc(i.email)}</span><span class="r">초대 대기</span></div>`).join('');
       members = `${rows}<button class="s-item" data-act="gsel" data-k="member" data-id="prof"><span class="av sav" style="background:${PEOPLE.prof}">${initial('prof')}</span>지도교수님<span class="r">열람자</span></button>${invites}`;
     } else {
       members = `<div class="s-empty">${w.kind === 'team' ? '실행 중인 에이전트가 없어요' : '개인 워크스페이스예요'}</div>`;
@@ -985,7 +994,7 @@
   function pill(x, y, text, color, anchor, act) {
     const w = Math.round(textW(text) + 20);
     const rx = anchor === 'end' ? x - w : anchor === 'middle' ? x - w / 2 : x;
-    return `<g class="pill" ${act || ''}><rect x="${rx}" y="${y - 11}" width="${w}" height="22" rx="11" fill="#0d1117" stroke="${color}" stroke-width="1.2"/>
+    return `<g class="pill" ${act || ''}><rect x="${rx}" y="${y - 11}" width="${w}" height="22" rx="11" fill="${G.bg}" stroke="${color}" stroke-width="1.2"/>
       <text x="${rx + w / 2}" y="${y + 4}" text-anchor="middle" fill="${color}">${esc(text)}</text></g>`;
   }
 
@@ -1000,34 +1009,34 @@
     let edges = '', nodes = '', over = '';
     const envA = alerts.find(a => a.type === 'env') || S.computeAlerts(st, viewer === 'minsu' ? 'jiyun' : 'minsu', { includeHidden: true }).find(a => a.type === 'env');
 
-    edges += `<path class="edge dash" d="M0 ${Y_HUB} L${X_HUB} ${Y_HUB}" stroke="#6e7681"/>`;
+    edges += `<path class="edge dash" d="M0 ${Y_HUB} L${X_HUB} ${Y_HUB}" stroke="${G.dim}"/>`;
     for (const m of S.teammates(st, viewer)) {
       const c = GLOW[m.user], p = pos[m.user];
       const active = m.runs.length > 0;
       const envHere = envA && envA.from === m.user;
-      const ring = active ? c : envHere ? '#f0a35e' : '#484f58';
-      edges += `<path class="edge ${active || envHere ? 'flow' : ''}" d="M${X_HUB} ${Y_HUB} L${p.x} ${p.y}" stroke="${active ? c : envHere ? '#f0a35e' : '#30363d'}"/>`;
-      if (envHere) over += pill((X_HUB + p.x) / 2 + 6, (Y_HUB + p.y) / 2 + 22, `${envA.file} → ${envA.branch}`, '#f0a35e', 'middle', `data-act="gsel" data-k="alert" data-id="${esc(envA.key)}"`);
+      const ring = active || envHere ? c : G.idle;
+      edges += `<path class="edge ${active || envHere ? 'flow' : ''}" d="M${X_HUB} ${Y_HUB} L${p.x} ${p.y}" stroke="${active || envHere ? c : G.line}"/>`;
+      if (envHere) over += pill((X_HUB + p.x) / 2 + 6, (Y_HUB + p.y) / 2 + 22, `${envA.file} → ${envA.branch}`, c, 'middle', `data-act="gsel" data-k="alert" data-id="${esc(envA.key)}"`);
       nodes += `<g class="node" data-act="gsel" data-k="member" data-id="${m.user}" data-node="${m.user}" data-active="${active}">
         ${active ? `<circle class="halo" cx="${p.x}" cy="${p.y}" r="24" fill="none" stroke="${c}" stroke-width="2"/>` : ''}
-        <circle class="ring" cx="${p.x}" cy="${p.y}" r="24" fill="#0d1117" stroke="${ring}" stroke-width="2" ${active ? 'filter="url(#glow)"' : ''}/>
+        <circle class="ring" cx="${p.x}" cy="${p.y}" r="24" fill="${G.bg}" stroke="${ring}" stroke-width="2" ${active ? 'filter="url(#glow)"' : ''}/>
         <circle cx="${p.x}" cy="${p.y}" r="7" fill="${ring}"/>
-        <text class="lbl name" x="${p.x}" y="${p.y + 44}" text-anchor="middle">${esc(U[m.user].name)}${m.me ? ' · 나' : ''}</text>
-        <text class="lbl" x="${p.x}" y="${p.y + 60}" text-anchor="middle">${active ? `에이전트 ${m.runs.length}` : m.state === 'other' ? '다른 워크스페이스' : '대기'}</text></g>`;
+        <text class="g-lbl name" x="${p.x}" y="${p.y + 44}" text-anchor="middle">${esc(U[m.user].name)}${m.me ? ' · 나' : ''}</text>
+        <text class="g-lbl" x="${p.x}" y="${p.y + 60}" text-anchor="middle">${active ? `에이전트 ${m.runs.length}` : m.state === 'other' ? '다른 워크스페이스' : '대기'}</text></g>`;
     }
 
     for (const r of runs) {
       const p = pos[r.id], mp = pos[r.user], c = GLOW[r.user];
       const running = r.status === 'running';
       const shared = st.shareTitle[r.user] || r.user === viewer;
-      const ring = running ? c : '#d29922';
-      edges += `<path class="edge ${running ? 'flow' : 'dash'}" d="M${mp.x} ${mp.y} L${p.x} ${p.y}" stroke="${running ? c : '#8b6a2b'}"/>`;
+      const ring = running ? c : G.hi;
+      edges += `<path class="edge ${running ? 'flow' : 'dash'}" d="M${mp.x} ${mp.y} L${p.x} ${p.y}" stroke="${running ? c : G.dim}"/>`;
       nodes += `<g class="node" data-act="gsel" data-k="run" data-id="${r.id}" data-run="${esc(r.title)}">
         ${running ? `<circle class="halo" cx="${p.x}" cy="${p.y}" r="15" fill="none" stroke="${c}" stroke-width="2"/>` : ''}
-        <circle class="ring" cx="${p.x}" cy="${p.y}" r="15" fill="#0d1117" stroke="${ring}" stroke-width="2" ${running ? 'filter="url(#glow)"' : ''}/>
+        <circle class="ring" cx="${p.x}" cy="${p.y}" r="15" fill="${G.bg}" stroke="${ring}" stroke-width="2" ${running ? 'filter="url(#glow)"' : 'stroke-dasharray="3 3"'}/>
         <circle cx="${p.x}" cy="${p.y}" r="5" fill="${ring}"/>
-        <text class="lbl title" x="${p.x + 24}" y="${p.y - 2}">${esc(shared ? r.title : '비공개 작업')}${running ? '' : '<tspan class="lbl warn" dx="6">확인 필요</tspan>'}</text>
-        <text class="lbl" x="${p.x + 24}" y="${p.y + 14}">${r.tool === 'Claude Code' ? 'claude' : 'codex'} · ${esc(r.branch)}</text></g>`;
+        <text class="g-lbl title" x="${p.x + 24}" y="${p.y - 2}">${esc(shared ? r.title : '비공개 작업')}${running ? '' : '<tspan class="g-lbl wait" dx="6">확인 필요</tspan>'}</text>
+        <text class="g-lbl" x="${p.x + 24}" y="${p.y + 14}">${r.tool === 'Claude Code' ? 'claude' : 'codex'} · ${esc(r.branch)}</text></g>`;
     }
 
     // 경고 선: 비슷한 작업은 오른쪽, 공유 자원 충돌은 왼쪽으로 휘게
@@ -1035,8 +1044,8 @@
       const act = `data-act="gsel" data-k="alert" data-id="${esc(a.key)}"`;
       if (a.type === 'sim' && pos[a.myRun] && pos[a.otherRun]) {
         const k = curve(pos[a.myRun], pos[a.otherRun], 70);
-        edges += `<path class="edge dash" d="${k.d}" stroke="#a5a0ff" opacity=".85" data-edge="sim"/>`;
-        over += pill(k.mx + 6, k.my, '비슷한 작업', '#a5a0ff', 'start', act);
+        edges += `<path class="edge dash" d="${k.d}" stroke="${G.sim}" opacity=".85" data-edge="sim"/>`;
+        over += pill(k.mx + 6, k.my, '비슷한 작업', G.sim, 'start', act);
       }
       if (a.type === 'db' || a.type === 'dep') {
         const src = S.eventById(st, a.evidence[a.evidence.length - 1]);
@@ -1044,8 +1053,8 @@
         const mine = runs.find(r => r.user === viewer && r.tool === 'Claude Code') || runs.find(r => r.user === viewer);
         const to = mine ? pos[mine.id] : pos[viewer];
         const k = curve(from, to, -80);
-        edges += `<path class="edge flow thick" d="${k.d}" stroke="#e3b341" filter="url(#glow)" data-edge="conflict"/>`;
-        over += pill(k.mx - 6, k.my, a.type === 'db' ? 'DB 스키마 충돌 가능' : '의존성 변경', '#e3b341', 'end', act);
+        edges += `<path class="edge flow thick" d="${k.d}" stroke="${G.warn}" filter="url(#glow)" data-edge="conflict"/>`;
+        over += pill(k.mx - 6, k.my, a.type === 'db' ? 'DB 스키마 충돌 가능' : '의존성 변경', G.warn, 'end', act);
       }
     }
     // 내 변경으로 다른 팀원에게 경고가 간 경우: 작성자 화면에는 조용한 회색 선만
@@ -1058,14 +1067,14 @@
         const otherRun = runs.find(r => r.user === c.user && r.tool === 'Claude Code') || runs.find(r => r.user === c.user);
         const to = otherRun ? pos[otherRun.id] : pos[c.user];
         const k = curve(pos[e.runId], to, -80);
-        edges += `<path class="edge dash" d="${k.d}" stroke="#6e7681" data-edge="caused"/>`;
-        over += pill(k.mx - 6, k.my, `${U[c.user].name}에게 알림 보냄`, '#8b949e', 'end', '');
+        edges += `<path class="edge dash" d="${k.d}" stroke="${G.dim}" data-edge="caused"/>`;
+        over += pill(k.mx - 6, k.my, `${U[c.user].name}에게 알림 보냄`, G.mute, 'end', '');
       }
     }
 
     const hubWarn = envA && envA.branch === st.team.base;
-    nodes += `<g><circle cx="${X_HUB}" cy="${Y_HUB}" r="9" fill="${hubWarn ? '#f0a35e' : '#c9d1d9'}" ${hubWarn ? 'filter="url(#glow)"' : ''}/>
-      <text class="lbl" x="${X_HUB}" y="${Y_HUB + 28}" text-anchor="middle">main</text><text class="lbl" x="${X_HUB}" y="${Y_HUB + 43}" text-anchor="middle">v${st.team.version}</text></g>`;
+    nodes += `<g><circle cx="${X_HUB}" cy="${Y_HUB}" r="9" fill="${hubWarn ? GLOW[envA.from] : G.text}" ${hubWarn ? 'filter="url(#glow)"' : ''}/>
+      <text class="g-lbl" x="${X_HUB}" y="${Y_HUB + 28}" text-anchor="middle">main</text><text class="g-lbl" x="${X_HUB}" y="${Y_HUB + 43}" text-anchor="middle">v${st.team.version}</text></g>`;
 
     return `<svg class="g-svg" viewBox="0 0 640 460" preserveAspectRatio="xMidYMid meet" role="img" aria-label="팀 AI 작업 그래프">
       <defs><filter id="glow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="3.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
@@ -1136,7 +1145,7 @@
         ${m && m.areas.length ? `<div class="ev-l">최근 영역 · ${m.areas.map(esc).join(' · ')}</div>` : ''}</div>`;
     }
     return `<div class="g-card" data-card="legend"><h3>보는 법</h3>
-      <div class="legend"><span><i style="background:#56c2e6"></i>빛나는 노드 = 작업 중</span><span><i style="background:#d29922"></i>확인 필요</span><span><i style="background:#484f58"></i>대기</span><span><i style="background:#e3b341"></i>충돌 가능</span></div>
+      <div class="legend"><span><i class="lg-run"></i>빛나는 노드 = 작업 중</span><span><i class="lg-wait"></i>확인 필요</span><span><i class="lg-idle"></i>대기</span><span><i class="lg-warn"></i>충돌 가능</span></div>
       <p style="color:var(--dark-mute)">노드를 누르면 자세히 보여요.</p></div>`;
   }
 
@@ -1152,7 +1161,7 @@
         <div class="g-view">보는 사람 · <b>${esc(U[viewer].name)}</b> (${esc(U[viewer].device)})</div></div>
       <div class="g-stage">
         <div class="g-left">
-        <div class="term"><div class="term-bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span>~/projects/capstone</span></div>
+        <div class="term"><div class="term-bar"><span>~/projects/capstone</span></div>
           <div class="term-body" id="termbody"><div><span class="g">$</span> cadora watch --team</div><div class="m">공유: 제목 · 브랜치 · 상대경로만</div>${lines}</div>
           <div class="term-in"><span class="g">$</span><input id="tin" data-enter="term" placeholder='claude "작업 제목"' autocomplete="off" spellcheck="false" aria-label="터미널"></div></div>
         ${gCard(viewer)}
@@ -1271,11 +1280,11 @@
     if (ui.menu === 'ws') {
       const items = myWs().map(w => {
         const m = wsMeta(ui.viewer, w);
-        return `<button class="menu-item ${curId() === w.id ? 'on' : ''}" data-act="ws" data-id="${w.id}"><span class="av" style="background:${w.color}">${esc(w.short)}</span>
+        return `<button class="menu-item ${curId() === w.id ? 'on' : ''}" data-act="ws" data-id="${w.id}"><span class="av" style="background:${w.ink}">${esc(w.short)}</span>
           <span class="grow"><b>${esc(w.name)}</b><br><span style="font-size:12px;color:var(--text-3)">${esc(m.text)}</span></span></button>`;
       }).join('');
       return `<div class="menu" style="left:72px;top:50px"><h4>${esc(U[ui.viewer].name)}의 워크스페이스</h4>${items}<div class="sep"></div>
-        <button class="menu-item" data-act="create-open"><span class="av" style="background:#e9ecef;color:#495057">${ico('plus', 15)}</span><b>새 워크스페이스</b></button></div>`;
+        <button class="menu-item" data-act="create-open"><span class="av" style="background:var(--line-2);color:var(--text-2)">${ico('plus', 15)}</span><b>새 워크스페이스</b></button></div>`;
     }
     if (ui.menu === 'demo') {
       const steps = STEPS.map((s, i) => `<li class="${i < st.step ? 'done' : i === st.step ? 'next' : ''} ${s.star ? 'star' : ''}"><span class="n">${i < st.step ? ico('check', 12, 2.6) : i + 1}</span>${esc(s.label)}</li>`).join('');
@@ -1429,7 +1438,7 @@ docker compose pull</pre><div class="btns"><button class="btn primary" data-act=
     const ports = Object.values(ui.local).flatMap(x => Object.values(x)).map(x => x.port || 3000);
     const port = Math.max(...ports) + 1;
     const host = d.cmd.trim() ? `${base.split('-')[0]}.localhost` : null;
-    ui.wsList.push({ id, name, short: name[0], kind: 'personal', color: NEW_COLORS[ui.wsList.length % NEW_COLORS.length], members: [v] });
+    ui.wsList.push(Object.assign({ id, name, short: name[0], kind: 'personal', members: [v] }, NEW_COLORS[ui.wsList.length % NEW_COLORS.length]));
     ui.local[v][id] = {
       loggedIn: !!(share && share.loggedIn), tab: 0, server: host ? 'running' : 'none', host, port: host ? port : null, cmd: d.cmd.trim(), env: host ? { PORT: String(port) } : {},
       files: ['자료/'], downloads: [], tabs: d.tabs.length ? d.tabs.slice() : ['새 탭'], privateTabs: [], branch: 'main',
