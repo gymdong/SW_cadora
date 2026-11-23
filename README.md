@@ -5,7 +5,8 @@
 ![Cadora 팀 AI 작업 현황](docs/ui/06-team-ai-status.png)
 
 - **플랫폼**: Windows 11 우선 (Electron), macOS 후속
-- **상태**: PRD v1.1 초안 단계 — 상세 요구사항은 [`docs/PRD.md`](docs/PRD.md)
+- **상태**: PRD v1.3 (아키텍처 방향 반영, 리뷰 전) · 착수 준비 단계
+- **문서**: 요구사항 [`docs/PRD.md`](docs/PRD.md) · 구성·착수 계획 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · 인터페이스 명세 [`docs/API.md`](docs/API.md) (팀 협업 작성 중) · 클릭형 데모 [`prototype/`](prototype/README.md)
 
 ## 왜 만드나
 
@@ -17,7 +18,7 @@ Cadora는 다음 세 가지를 해결합니다.
 2. **팀 온보딩 단순화** — 팀장이 구성한 공통 환경을 팀원이 초대 수락만으로 받아 시작
 3. **AI 병렬 작업 조율** — 에이전트 실행 상태와 변경 파일 메타데이터로 충돌 가능성을 머지 전에 경고
 
-Cadora는 에디터나 AI 모델을 직접 만들지 않습니다. VS Code, Claude Code, Codex, Discord 같은 기존 도구를 **연결·실행·관찰**하는 상위 레이어입니다.
+Cadora는 에디터나 AI 모델을 직접 만들지 않습니다. VS Code, Claude Code, Codex, Discord 같은 기존 도구를 **연결·실행·관찰**하는 상위 레이어입니다. 에이전트 실행·세션 유지·상태 감지는 오픈소스 에이전트 런타임 [Herdr](https://herdr.dev)를 엔진으로 쓰고(대체: node-pty 직접 구현), Cadora는 그 위에 터미널 밖의 환경 격리와 팀 레이어를 만듭니다.
 
 ## 주요 기능 (MVP / P0)
 
@@ -26,8 +27,8 @@ Cadora는 에디터나 AI 모델을 직접 만들지 않습니다. VS Code, Clau
 | 워크스페이스 | 생성·목록, 활성/백그라운드/잠자기 상태 | FR-01, FR-04 |
 | 격리 | 워크스페이스별 브라우저 세션(partition), 터미널 cwd·환경변수, 다운로드 폴더 | FR-02, FR-03, FR-05 |
 | 팀 | 생성·초대·역할, 공유 층/개인 층 분리 동기화, 온보딩 체크리스트 | FR-07 ~ FR-09 |
-| AI 작업 | CLI 에이전트 실행·상태, 파일/Git 변경 감시, Claude Code Hooks | FR-11 ~ FR-13 |
-| 팀 조율 | 팀 AI 작업 현황 패널, 규칙 기반 충돌 가능성 경고 | FR-14, FR-15 |
+| AI 작업 | CLI 에이전트 실행·상태(에이전트 런타임 어댑터: Herdr / node-pty), 파일/Git 변경 감시, Claude Code Hooks | FR-11 ~ FR-13 |
+| 팀 조율 | 팀 AI 작업 현황 패널, 규칙 기반 충돌 가능성 경고(서버가 받는 사람별로 생성) | FR-14, FR-15 |
 | 보호 | 최소 메타데이터 공유, 비밀값 마스킹 | FR-18, FR-19 |
 
 **P0 핵심 데모**: 두 기기에서 팀 워크스페이스를 쓰는 중 A의 Claude Code가 `schema.prisma`를 수정하면, B의 팀 AI 작업 현황에 충돌 가능성 경고가 표시된다.
@@ -72,25 +73,34 @@ Cadora는 에디터나 AI 모델을 직접 만들지 않습니다. VS Code, Clau
 
 <p align="center"><img src="docs/ui/06-team-ai-status.png" alt="팀 AI 작업 현황" width="720"></p>
 
-## 아키텍처 (제안)
+## 아키텍처
+
+자세한 결정 근거는 [PRD §7](docs/PRD.md#7-시스템-구성), 저장소 구성과 착수 순서는 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)를 봅니다.
 
 ```
-[데스크톱 클라이언트: Electron]
-  ├─ 워크스페이스/세션 관리자 ── BrowserView + session.fromPartition()
-  ├─ 터미널·프로세스 관리자 ──── xterm.js + node-pty (Windows: PowerShell / ConPTY)
-  ├─ 프로젝트 감시 ───────────── chokidar + simple-git
-  ├─ 에이전트 어댑터 ─────────── CLI 실행 + Claude Code Hooks
-  └─ 로컬 UI
-              │ 인증된 실시간 이벤트 (최소 메타데이터)
+[데스크톱 클라이언트: Electron, Windows 11 우선]
+  ├─ 워크스페이스 관리자 ──── 로컬 저장 (개인 워크스페이스 · 팀 워크스페이스의 개인 층)
+  ├─ 브라우저 관리자 ──────── WebContentsView + session.fromPartition(), 다운로드 라우팅
+  ├─ 에이전트 런타임 어댑터 ── Herdr 어댑터 (1순위) | node-pty 어댑터 (대체)
+  ├─ 프로젝트 감시 ────────── chokidar + simple-git → 공통 규칙 모듈로 분류
+  ├─ Hook 수신기 ─────────── 127.0.0.1, Claude Code Hooks → 최소 메타데이터
+  ├─ 동기화 클라이언트 ────── WebSocket, 오프라인 큐
+  └─ 로컬 UI (React)
+              │ HTTPS + WSS, 최소 메타데이터만
               ▼
-[팀 동기화 서버: Node/WebSocket 또는 Supabase Realtime — 미정]
-  ├─ 사용자·팀·멤버십·초대
-  ├─ 공통 구성 버전 관리
-  ├─ 에이전트 실행·파일 변경 이벤트
-  └─ 규칙 기반 위험 감지·경고
+[팀 동기화 서버: Node 22 · Fastify · WebSocket · Prisma]
+  ├─ 인증 (GitHub OAuth Device Flow) · 팀 워크스페이스 · 멤버십 · 초대
+  ├─ 공유 층 설정 버전 관리 · 구성원별 적용 상태
+  ├─ 이벤트 수신 · 검증 · 저장 · 전달
+  └─ 경고 생성 (공통 규칙 모듈, 받는 사람별)
+
+[공통 규칙 모듈: packages/core]  분류 · 정제 · 마스킹 · 유사도 · 경고 규칙 — 데스크톱과 서버가 같은 코드 사용
 ```
 
-OS 의존 기능(파일 시스템, 셸·프로세스, 외부 앱 연동)은 macOS 확장을 위해 별도 어댑터로 분리합니다.
+- **Herdr가 맡는 것**: 에이전트·터미널 실행, 세션 유지, 에이전트 상태 감지, 에이전트 입력 전달.
+- **Cadora가 맡는 것**: 브라우저 세션 격리, 다운로드 분기, 비밀값, 파일·Git 감시, 팀 동기화, 충돌 경고.
+- **판단 규칙은 한 곳에**: 프로토타입 `prototype/sim.js`의 순수 로직을 `packages/core`로 옮겨 데스크톱(전송 전 검사)과 서버(수신 검증·경고 생성)가 함께 씁니다.
+- OS 의존 기능(파일 시스템, 셸·프로세스, 외부 앱 연동)은 macOS 확장을 위해 별도 어댑터로 분리합니다.
 
 ## 개발 환경
 
@@ -99,6 +109,7 @@ OS 의존 기능(파일 시스템, 셸·프로세스, 외부 앱 연동)은 macO
 | OS | Windows 11 (주 개발·테스트), macOS (보조) |
 | Node.js | 22 LTS (`.nvmrc`) |
 | 패키지 매니저 | npm |
+| 선택 | [Herdr](https://herdr.dev) — 에이전트 런타임 (0주차 스파이크로 채택 확정) |
 | 필수 아님 | WSL2, Docker Desktop |
 
 ```bash
@@ -232,17 +243,26 @@ protect main '["ci-passed","pr-title","source-branch"]'
 
 | 주차 | 산출물 |
 |---|---|
+| 0 | 리스크 스파이크(내장 브라우저 Google 로그인, Windows에서 Herdr 연결, Hooks 수신, 파일 감시 성능), 모노레포 골격, 공통 규칙 모듈 이식 |
 | 1–2 | Electron 기본 화면, 로컬 저장 구조, 워크스페이스 모델 |
 | 3–4 | 독립 브라우저 세션, 터미널, 프로세스 실행, 다운로드 라우팅 |
-| 5–6 | CLI 에이전트 실행, Git/파일 감시, 로컬 작업 상태 패널 |
+| 5–6 | 에이전트 런타임 어댑터(Herdr/node-pty), CLI 에이전트 실행, Git/파일 감시, 로컬 작업 상태 패널 |
 | 7–9 | 사용자/팀 인증, 초대, 공유 층·개인 층 동기화, 온보딩 |
 | 10–11 | Claude Code Hooks, 이벤트 규격, 팀 실시간 상태 |
 | 12–13 | 유사 작업·스키마·환경 파일 경고, 알림 근거 |
 | 14–15 | 두 기기 통합 테스트, 보안·예외 처리, 발표 시연 |
 
-## 미결정 사항
+## 결정 현황
 
-- 팀 동기화 서버: 자체 Node/WebSocket vs Supabase Realtime
-- 비밀값 저장: 자체 금고 / OS 키체인 / 외부 비밀관리 서비스
-- 공식 지원 에이전트 범위: Claude Code만 vs Codex 포함
-- 팀 변경 적용 방식: 즉시 자동 vs 사용자 승인 후
+전체 목록은 [PRD §11.1](docs/PRD.md#111-제품-결정-현황)에 있습니다.
+
+| 항목 | 상태 | 내용 |
+|---|---|---|
+| 팀 동기화 서버 | 결정 (리뷰 전) | 직접 만드는 Node 서버 (Fastify + WebSocket + Prisma) |
+| 인증 | 결정 (리뷰 전) | GitHub OAuth Device Flow |
+| 에이전트 런타임 | 스파이크 후 확정 | Herdr 1순위, node-pty 대체 |
+| 공식 지원 에이전트 | 결정 | P0는 Claude Code(Hooks + 상태), Codex는 실행·상태·파일 감시까지 |
+| 팀 변경 적용 | 결정 (리뷰 전) | 탭·자료·링크는 즉시, 설치·스크립트·재시작은 사용자 승인 후 |
+| 비밀값 저장 | 미결정 | MVP는 테스트 값 + 이름 참조만 동기화, 로컬은 OS 보호 저장소 |
+| 팀 공용 파일 | 미결정 | MVP는 클라우드 자료 링크 공유 제안 |
+| 인터페이스 세부 명세 | 협업 작성 중 | [`docs/API.md`](docs/API.md) |
