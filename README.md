@@ -6,7 +6,7 @@
 
 - **플랫폼**: Windows 11 우선 (Electron), macOS 후속
 - **상태**: PRD v1.3 (아키텍처 방향 반영, 리뷰 전) · 착수 준비 단계
-- **문서**: 요구사항 [`docs/PRD.md`](docs/PRD.md) · 구성·착수 계획 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · 인터페이스 명세 [`docs/API.md`](docs/API.md) (팀 협업 작성 중) · 클릭형 데모 [`prototype/`](prototype/README.md)
+- **문서**: 요구사항 [`docs/PRD.md`](docs/PRD.md) · 구성·착수 계획 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) · 인터페이스 명세 [`docs/API.md`](docs/API.md) (팀 협업 작성 중) · 데이터 모델 [`docs/ERD.md`](docs/ERD.md) · 클릭형 데모 [`prototype/`](prototype/README.md)
 
 ## 왜 만드나
 
