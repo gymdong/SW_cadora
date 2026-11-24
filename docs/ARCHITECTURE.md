@@ -43,20 +43,20 @@
 └──────────────────────────────────────┬─────────────────────────────────────────────────────┘
                                        │ HTTPS(REST) + WSS — 최소 메타데이터만 (FR-18)
 ┌──────────────────────────────────────▼─────────────────────────────────────────────────────┐
-│ Cadora Sync Server (Node 22, Fastify + ws + Prisma)                                         │
+│ Cadora Sync Server (Java 26 + Spring Boot 4.2.x + WebSocket · Docker)                                         │
 │  ├─ auth        GitHub OAuth Device Flow → JWT                                              │
 │  ├─ workspaces  팀 워크스페이스 · 멤버십 · 초대 · 역할                                 FR-07 │
 │  ├─ config      공유 층 설정 버전 관리 · 구성원별 적용 상태                            FR-08,09 │
 │  ├─ events      이벤트 수신 · 검증(core.privacyCheck) · 저장 · 팬아웃                   FR-14,18 │
-│  └─ rules       core.computeAlerts 기반 경고 생성 · 수신자 지정                        FR-15 │
-│  DB: PostgreSQL (개발·시연은 SQLite 가능)                                                    │
+│  └─ rules       Java 규칙으로 경고 생성 · 수신자 지정                        FR-15 │
+│  DB: MySQL (Docker 개발·배포)                                                    │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 외부 도구: VS Code/Cursor · Claude Code/Codex CLI · Herdr(선택) · Git · Docker · Discord
 ```
 
 ### 2.1 역할 분담 원칙
 
-- **판단 로직은 `packages/core` 한 곳에만 둔다.** 데스크톱은 전송 전 검사(`privacyCheck`)와 분류(`classify`)에, 서버는 수신 검증과 경고 생성(`computeAlerts`)에 같은 코드를 쓴다.
+- **판단 규칙의 계약은 공통으로 유지한다.** 데스크톱은 `packages/core`의 TypeScript 구현을 쓰고 Java 서버는 동등한 규칙을 별도로 구현한다. 공통 테스트 사례로 결과 일치를 검증한다.
 - **경고는 서버가 만든다.** 프로토타입의 `computeAlerts(viewer)`는 보는 사람 기준으로 계산하는데, 실제로는 서버가 이벤트가 들어올 때마다 대상 팀원별로 계산해 `alert` 메시지로 보낸다. 그래야 "지윤에게만 보이는 경고"(FR-15)와 경고 이력 저장(RiskAlert)이 한 곳에서 처리된다.
 - **개인 층은 서버에 올리지 않는다.** 개인 워크스페이스, 로그인 세션, 개인 탭, 다운로드 경로는 로컬 저장소에만 둔다(PRD §7.4 LocalWorkspaceConfig).
 
@@ -64,7 +64,7 @@
 
 | 항목 | 제안 | 근거 | 확정 시점 |
 |---|---|---|---|
-| 팀 동기화 서버 | **자체 Node 서버** (Fastify + ws + Prisma) | 경고 규칙을 `packages/core`와 같은 TypeScript로 서버에서 돌릴 수 있다. Supabase를 쓰면 인증·실시간은 빨라지지만 규칙 실행 위치(Edge Function, Deno)가 갈라진다. 시연 데모의 `schema.prisma`와 같은 스택이라 설명하기도 좋다. | 1주차 |
+| 팀 동기화 서버 | **Java 26·Spring Boot 4.2.x 서버 + MySQL, Docker** | 요청된 서버 기술 방향. 개발·배포에서 같은 DB 계열과 컨테이너 구성을 사용한다. | 결정 |
 | 인증 | **GitHub OAuth Device Flow** | 데스크톱 앱에 리다이렉트 서버가 필요 없고, 대상 사용자가 모두 GitHub 계정이 있다. 시연용 `dev-login`을 함께 둔다. | 1주차 |
 | 에이전트 런타임 | **`AgentRuntime` 인터페이스 + 어댑터 2개** — Herdr 어댑터(1순위), node-pty 어댑터(대체) | Herdr는 세션 유지·에이전트 상태 감지·소켓 API를 이미 제공한다. Windows 지원 성숙도가 문서마다 다르게 적혀 있어 스파이크로 확인한다. | 1주차 스파이크 |
 | 로컬 저장소 | JSON 파일(`electron-store` 또는 직접 구현) | Windows에서 네이티브 모듈 빌드(better-sqlite3)를 피한다. 데이터 양이 작다. | 1주차 |
@@ -107,20 +107,20 @@ SW_cadora/
 │  │        ├─ screens/         # Workspace · Team · Activity · Calendar
 │  │        ├─ components/
 │  │        └─ styles/          # prototype/styles.css 토큰
-│  └─ server/                   # Fastify + ws + Prisma
-│     ├─ prisma/schema.prisma   # §6 데이터 모델
-│     └─ src/
-│        ├─ http/               # REST 라우트 (API.md §1)
-│        ├─ ws/                 # WebSocket 게이트웨이 (API.md §2)
-│        ├─ rules/              # core.computeAlerts 호출, 수신자 지정, 이력 저장
-│        └─ auth/
+│  └─ server/                   # Java 26 + Spring Boot 4.2.x + WebSocket
+│     ├─ Dockerfile             # 서버 이미지
+│     ├─ build.gradle           # 빌드 도구는 Gradle 제안
+│     └─ src/                   # REST · WS · auth · rules · persistence
+├─ compose.yaml                 # 서버 + MySQL 로컬 개발
 ├─ packages/
 │  ├─ core/                     # sim.js 이식 (순수 TS, DOM·Node API 없음) + vitest
 │  │  └─ src/ classify.ts · privacy.ts · mask.ts · similarity.ts · branch.ts · alerts.ts
-│  └─ protocol/                 # zod 스키마: 이벤트 · REST DTO · WS 메시지 · IPC 계약
+│  └─ protocol/                 # 데스크톱 zod 계약; 서버 Java 계약과 공통 사례 검증
 ├─ prototype/                   # 그대로 유지
 └─ docs/  PRD.md · ARCHITECTURE.md · API.md · ui/
 ```
+
+서버는 Java 26과 Spring Boot 4.2.x를 사용한다. Java 26은 단기 지원 버전이며 Eclipse Temurin의 일반 업데이트는 2026년 9월 종료되었으므로, 팀은 보안 업데이트 경로와 상위 버전 전환 계획을 관리한다. Spring Boot 4.2.x의 구체적인 패치 버전은 서버 골격에 고정한다. 서버 호스팅 업체·환경은 미정이다.
 
 ### 4.1 핵심 의존성
 
@@ -129,7 +129,7 @@ SW_cadora/
 | 데스크톱 | `electron`, `electron-vite`, `electron-builder`, `react`, `xterm`(@xterm/xterm) | 브라우저 뷰는 `WebContentsView`를 쓴다(`BrowserView`는 Electron 30부터 deprecated). |
 | 런타임 | `node-pty`(대체 어댑터), Herdr CLI(외부 설치) | node-pty는 네이티브 모듈이라 electron-builder 재빌드가 필요하다. |
 | 감시 | `chokidar`, `simple-git` | `.git`, `node_modules`, 빌드 결과물 제외(core의 IGNORED와 같은 목록). |
-| 서버 | `fastify`, `ws`(또는 `@fastify/websocket`), `prisma`, `jose`(JWT) | |
+| 서버 | Java 26, Spring Boot 4.2.x, Spring WebSocket, MySQL, Docker | 영속성·마이그레이션 도구와 호스팅은 미정 |
 | 공통 | `zod`, `typescript`, `vitest`, `eslint` | |
 
 ## 5. 에이전트 런타임: Herdr 어댑터와 node-pty 대체
@@ -147,99 +147,11 @@ SW_cadora/
 
 Herdr를 쓰더라도 **파일·Git 감시와 Claude Code hooks는 Cadora가 직접 한다.** Herdr는 에이전트가 "작업 중인지"만 알려주고, 어떤 파일을 바꿨는지와 팀 공유는 Cadora의 몫이다.
 
-## 6. 데이터 모델 (서버, Prisma 초안)
+## 6. 데이터 모델 (서버 논리 설계)
 
-PRD §7.4 엔터티를 MVP에 맞게 줄였다. 팀은 "팀 워크스페이스 + 멤버십"으로 표현하고 Team 테이블은 두지 않는다(팀 1개 = 팀 워크스페이스 1개).
+팀은 팀 워크스페이스와 멤버십으로 표현하며 별도 `Team` 테이블을 두지 않는다. 서버의 논리 엔터티·필드·키·관계 및 저장 경계는 [`ERD.md`](ERD.md)를 기준으로 한다. API 타입과 통신 계약은 [`API.md`](API.md)를 따른다. 아직 구현된 Java 영속성 모델이나 DB 마이그레이션은 없으며, 서버 구현 이슈에서 작성한다.
 
-```prisma
-model User {
-  id          String   @id @default(cuid())
-  githubId    String   @unique
-  displayName String
-  avatarUrl   String?
-  createdAt   DateTime @default(now())
-  memberships Membership[]
-}
-
-model Workspace {                    // 팀 워크스페이스만 서버에 존재 (개인은 로컬 전용)
-  id            String   @id @default(cuid())
-  name          String
-  type          WorkspaceType
-  configVersion Int      @default(0)
-  createdAt     DateTime @default(now())
-  memberships   Membership[]
-  configs       ConfigVersion[]
-  events        Event[]
-  alerts        Alert[]
-  invites       Invite[]
-}
-
-model Membership {
-  workspaceId    String
-  userId         String
-  role           Role                  // LEADER | MEMBER | VIEWER
-  shareTaskTitle Boolean  @default(true)   // FR-18 공유 범위
-  appliedVersion Int      @default(0)      // FR-08 구성원별 적용 상태
-  onboarding     Json?                     // FR-09 단계별 상태
-  joinedAt       DateTime @default(now())
-  @@id([workspaceId, userId])
-}
-
-model Invite {
-  id          String   @id @default(cuid())
-  workspaceId String
-  code        String   @unique
-  role        Role
-  createdBy   String
-  expiresAt   DateTime
-  acceptedBy  String?
-  revokedAt   DateTime?
-}
-
-model ConfigVersion {                // 공유 층 스냅샷, 버전마다 1행
-  workspaceId String
-  version     Int
-  config      Json                   // API.md §1.4 SharedConfig
-  authorId    String
-  createdAt   DateTime @default(now())
-  @@id([workspaceId, version])
-}
-
-model Event {                        // 최소 메타데이터 이벤트 (API.md §2.3)
-  seq         BigInt   @id @default(autoincrement())
-  id          String   @unique       // 클라이언트 생성 UUID (재전송 중복 제거)
-  workspaceId String
-  userId      String
-  type        String                 // agent_run | agent_status | agent_activity | file_change
-  agentRunId  String?
-  payload     Json
-  at          DateTime
-  receivedAt  DateTime @default(now())
-  @@index([workspaceId, seq])
-}
-
-model Alert {
-  id          String   @id @default(cuid())
-  workspaceId String
-  key         String                 // 같은 원인 중복 방지 (core.computeAlerts의 key)
-  type        AlertType              // DB | DEP | ENV | SIM
-  severity    Severity               // HIGH | MEDIUM | INFO
-  recipientId String                 // 경고는 받는 사람별로 1행
-  fromUserId  String
-  evidence    String[]               // Event.id 목록 (SQLite면 Json)
-  rule        String                 // 사람이 읽는 판단 근거
-  status      AlertStatus @default(NEW)  // NEW | DISMISSED | NOTIFIED | HANDLED
-  feedback    Boolean?               // 오탐 피드백 (PRD §10.2 경고의 유용성)
-  createdAt   DateTime @default(now())
-  @@unique([workspaceId, recipientId, key])
-}
-
-enum WorkspaceType { ASSIGNMENT DEV_TEAM CONTEST CUSTOM }
-enum Role          { LEADER MEMBER VIEWER }
-enum AlertType     { DB DEP ENV SIM }
-enum Severity      { HIGH MEDIUM INFO }
-enum AlertStatus   { NEW DISMISSED NOTIFIED HANDLED }
-```
+서버의 주요 엔터티는 User, RefreshSession, Workspace, Membership, Invite, ConfigVersion, AgentRun, Event, Alert, AlertEvidence다. 이벤트 순번은 DB에서 BigInt로 보관하고 API에서는 10진 문자열로 전달한다. 인증은 기기별 refresh 세션과 토큰 교체·재사용 감지를 구현한다. 초대는 1인 수락이며 경고 중복은 워크스페이스·수신자·원인 키 단위로 방지한다. 서버의 개인정보 검사는 공유 설정과 이벤트의 서로 다른 데이터 범위를 구분한다.
 
 로컬(데스크톱) 저장소는 `workspaces.json` 하나로 시작한다: 개인 워크스페이스 전체, 팀 워크스페이스의 개인 층(로컬 경로, partition 이름, 다운로드 폴더, 개인 탭), 마지막으로 적용한 공유 설정 버전, 오프라인 큐.
 
@@ -269,7 +181,7 @@ README의 브랜치 규칙(`feat/*` → `dev`, Conventional Commits PR 제목)�
 | 4 | `feat(desktop): Electron 셸과 워크스페이스 목록 (FR-01)` | electron-vite, 사이드바, 생성 모달, 로컬 저장 | 앱 재시작 후 워크스페이스 2개 유지 |
 | 5 | `feat(browser): 워크스페이스별 세션 분리와 다운로드 분기 (FR-02, FR-05)` | WebContentsView + partition, will-download | PRD FR-02·05 수용 기준 |
 | 6 | `feat(runtime): AgentRuntime과 S2 결과 어댑터 (FR-03, FR-11)` | 스크립트·에이전트 실행, 상태 | 작업 제목·브랜치로 Claude Code 실행 후 상태 표시 |
-| 7 | `feat(server): 인증 · 팀 워크스페이스 · 초대 (FR-07)` | Fastify, Prisma, Device Flow, 초대 | 노트북 B에서 초대 수락 후 사이드바에 표시 |
+| 7 | `feat(server): 인증 · 팀 워크스페이스 · 초대 (FR-07)` | Spring Boot, MySQL, Device Flow, 초대 | 노트북 B에서 초대 수락 후 사이드바에 표시 |
 
 4~5주차부터는 PRD §8.3 일정을 따른다(감시 → 동기화 → hooks → 경고 → 통합 테스트).
 
@@ -286,7 +198,7 @@ README의 브랜치 규칙(`feat/*` → `dev`, Conventional Commits PR 제목)�
 
 #### 이슈별 분배 계획
 
-아래는 PRD·아키텍처의 착수 계획을 이슈 단위로 분해한 **작업 계획**이다. 현재 GitHub에 등록된 이슈가 아니며 번호, 실제 이슈 생성 및 담당자 지정은 별도로 진행한다. 공통 `packages/core`와 `packages/protocol`은 서버·데스크톱 양쪽에 영향을 주므로 계약을 함께 검토한다.
+아래는 PRD·아키텍처의 착수 계획을 이슈 단위로 분해한 **작업 계획**이다. 실제 이슈와 담당은 GitHub 이슈에서 확인한다. `packages/core`와 `packages/protocol`은 데스크톱 TypeScript 모듈이며 서버 Java 구현과 공통 계약·테스트 사례를 함께 검토한다.
 
 | 작업 이슈 | 주 담당 | 협업 | 근거·범위 |
 |---|---|---|---|

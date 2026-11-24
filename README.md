@@ -88,18 +88,18 @@ Cadora는 에디터나 AI 모델을 직접 만들지 않습니다. VS Code, Clau
   └─ 로컬 UI (React)
               │ HTTPS + WSS, 최소 메타데이터만
               ▼
-[팀 동기화 서버: Node 22 · Fastify · WebSocket · Prisma]
+[팀 동기화 서버: Java 26 · Spring Boot 4.2.x · WebSocket · MySQL · Docker]
   ├─ 인증 (GitHub OAuth Device Flow) · 팀 워크스페이스 · 멤버십 · 초대
   ├─ 공유 층 설정 버전 관리 · 구성원별 적용 상태
   ├─ 이벤트 수신 · 검증 · 저장 · 전달
-  └─ 경고 생성 (공통 규칙 모듈, 받는 사람별)
+  └─ 경고 생성 (Java 규칙 구현, 받는 사람별)
 
-[공통 규칙 모듈: packages/core]  분류 · 정제 · 마스킹 · 유사도 · 경고 규칙 — 데스크톱과 서버가 같은 코드 사용
+[공통 계약·검증 사례]  데스크톱 TypeScript와 서버 Java 구현이 같은 이벤트 계약과 테스트 사례를 사용
 ```
 
 - **Herdr가 맡는 것**: 에이전트·터미널 실행, 세션 유지, 에이전트 상태 감지, 에이전트 입력 전달.
 - **Cadora가 맡는 것**: 브라우저 세션 격리, 다운로드 분기, 비밀값, 파일·Git 감시, 팀 동기화, 충돌 경고.
-- **판단 규칙은 한 곳에**: 프로토타입 `prototype/sim.js`의 순수 로직을 `packages/core`로 옮겨 데스크톱(전송 전 검사)과 서버(수신 검증·경고 생성)가 함께 씁니다.
+- **판단 규칙은 같은 결과로**: 데스크톱은 TypeScript, 서버는 Java로 필요한 규칙을 각각 구현하고 공통 테스트 사례로 결과를 비교합니다.
 - OS 의존 기능(파일 시스템, 셸·프로세스, 외부 앱 연동)은 macOS 확장을 위해 별도 어댑터로 분리합니다.
 
 ## 개발 환경
@@ -110,7 +110,8 @@ Cadora는 에디터나 AI 모델을 직접 만들지 않습니다. VS Code, Clau
 | Node.js | 22 LTS (`.nvmrc`) |
 | 패키지 매니저 | npm |
 | 선택 | [Herdr](https://herdr.dev) — 에이전트 런타임 (0주차 스파이크로 채택 확정) |
-| 필수 아님 | WSL2, Docker Desktop |
+| 서버 개발·배포 | Docker Engine 및 Compose (Windows에서는 Docker Desktop 등 호환 환경) |
+| 데스크톱 사용자 | WSL2와 Docker Desktop 설치 필수 아님 |
 
 ```bash
 nvm use            # 또는 Node 22 설치
@@ -177,7 +178,7 @@ release: v0.1.0                      # dev → main
 
 1. 변경 전에 사용자에게 **변경 사항, 변경할 문서, 관련 이슈 번호, 변경 전 내용과 변경 후 내용**을 알리고 승인을 받습니다. 관련 이슈가 없으면 없다고 명시합니다.
 2. 승인을 받으면 `docs/API.md`, `docs/ARCHITECTURE.md`, `docs/ERD.md`, `docs/PRD.md` 등 해당 기준 문서에 변경 내용을 바로 반영합니다.
-3. 변경 내용은 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)에 기록합니다. 관련 팀원과 협의한 이유와 영향도 함께 남깁니다.
+3. 기존 요구사항이나 계획이 바뀐 경우에만 [`docs/CHANGELOG.md`](docs/CHANGELOG.md)에 변경 내용과 관련 팀원과 협의한 이유·영향을 기록합니다. 요구사항이나 계획을 바꾸지 않는 문서 표현 수정이나 상세화는 기록하지 않습니다.
 
 기존 요구사항이나 문서 내용을 변경하지 않는 **새로운 내용의 추가**는 위 절차에 따른 사전 승인이 필요하지 않습니다. 추가 내용이 기존 내용과 충돌하거나 기존 의미를 바꾸면 기존 내용의 변경으로 취급합니다. 구현에 영향을 주는 변경은 관련 팀원과 조율합니다.
 
@@ -268,7 +269,7 @@ protect main '["ci-passed","pr-title","source-branch"]'
 
 | 항목 | 상태 | 내용 |
 |---|---|---|
-| 팀 동기화 서버 | 결정 (리뷰 전) | 직접 만드는 Node 서버 (Fastify + WebSocket + Prisma) |
+| 팀 동기화 서버 | 결정 | Java 26·Spring Boot 4.2.x, MySQL, Docker 기반 자체 서버. 호스팅은 미정 |
 | 인증 | 결정 (리뷰 전) | GitHub OAuth Device Flow |
 | 에이전트 런타임 | 스파이크 후 확정 | Herdr 1순위, node-pty 대체 |
 | 공식 지원 에이전트 | 결정 | P0는 Claude Code(Hooks + 상태), Codex는 실행·상태·파일 감시까지 |

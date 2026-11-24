@@ -7,16 +7,16 @@
 | 기준 | [API.md](API.md) v0.1 · [ARCHITECTURE.md](ARCHITECTURE.md) v0.1 · [PRD.md](PRD.md) v1.3 |
 | 범위 | P0 서버 관계형 모델, 데스크톱 로컬 저장 모델, P1 확장 경계 |
 
-팀 데이터는 서버 PostgreSQL에, 개인 워크스페이스와 팀 워크스페이스의 개인 설정은 데스크톱 JSON에 저장한다. 팀 하나가 서버 `Workspace` 하나이므로 별도 `Team` 테이블은 두지 않는다. 공유 설정은 버전별 JSON 스냅샷을 유지한다.
+팀 데이터는 서버 MySQL에, 개인 워크스페이스와 팀 워크스페이스의 개인 설정은 데스크톱 JSON에 저장한다. 팀 하나가 서버 `Workspace` 하나이므로 별도 `Team` 테이블은 두지 않는다. 공유 설정은 버전별 JSON 스냅샷을 유지한다.
 
-아래 ERD는 ARCHITECTURE §6의 초안을 API에서 필요한 필드와 관계로 보완한 **논리 설계**다. 실제 Prisma 스키마나 마이그레이션은 아니며, 추가 설계와 미결정 사항은 §7에 구분했다.
+아래 ERD는 ARCHITECTURE §6의 초안을 API에서 필요한 필드와 관계로 보완한 **논리 설계**다. 실제 Java 영속성 모델이나 마이그레이션은 아니며, 추가 설계와 미결정 사항은 §7에 구분했다.
 
 ## 1. 표기와 저장 원칙
 
 - `PK`: 기본키, `FK`: 외래키, `UK`: 단일 열 고유키. 복합 고유키는 §5에 별도로 적는다.
 - `nullable` 주석이 있는 필드만 NULL을 허용한다. `||`는 정확히 1개, `o|`는 0 또는 1개, `o{`는 0개 이상이다.
 - `string`은 논리 문자열 타입이다. 서버 생성 리소스 ID는 cuid, `AgentRun.id`와 `Event.id`는 클라이언트 생성 UUID v4다. 로컬 ID 생성 방식은 별도다.
-- `datetime`은 UTC 저장을 뜻한다. PostgreSQL 구현 시 시각 열은 timezone을 포함하는 타입을 사용한다.
+- `datetime`은 UTC 저장을 뜻한다. MySQL 연결 세션을 UTC로 고정하고 시간대 변환과 마이크로초 정밀도를 명시적으로 검증한다.
 - `json`은 구조화된 DTO다. 자유 입력 원본을 그대로 저장하는 필드가 아니며, API 스키마와 공개 범위 검사를 통과한 값만 저장한다.
 - 다이어그램을 읽기 쉽게 관리 영역과 실행 영역으로 나눴다. 양쪽의 `User`, `Workspace`는 같은 테이블이다.
 
@@ -44,6 +44,7 @@ erDiagram
         string id PK
         string userId FK
         string tokenHash UK
+        string familyId "token rotation family"
         datetime expiresAt
         datetime revokedAt "nullable"
         datetime createdAt
@@ -125,11 +126,11 @@ erDiagram
 
 ### 2.3 초대와 인증 세션
 
-초대는 생성자 1명과 수락자 최대 1명을 갖는다. `acceptedBy`, `acceptedAt`은 함께 설정하며 수락은 멤버십 생성과 원자적으로 처리한다. 단일 수락 초대는 ARCHITECTURE의 `acceptedBy`를 따른 설계 제안이다. 여러 사람이 쓰는 초대 링크가 필요하면 별도 수락 이력 테이블이 필요하다.
+초대는 생성자 1명과 수락자 최대 1명을 갖는다. `acceptedBy`, `acceptedAt`은 함께 설정하며 수락은 멤버십 생성과 원자적으로 처리한다. 단일 수락 초대는 API §6.3의 확정 계약이다. 여러 사람이 쓰는 초대 링크가 필요하면 별도 수락 이력 테이블이 필요하다.
 
-대기·수락·만료·회수 상태는 필드로 계산한다. 대기 목록은 `acceptedBy IS NULL AND revokedAt IS NULL AND expiresAt > now()`다. 만료·회수는 API의 410으로 처리하고, 이미 수락한 초대의 재요청 정책은 §7에서 다룬다.
+대기·수락·만료·회수 상태는 필드로 계산한다. 대기 목록은 `acceptedBy IS NULL AND revokedAt IS NULL AND expiresAt > now()`다. 만료·회수는 API의 410으로 처리하고, 같은 사용자의 재수락은 멱등으로 처리하고 다른 사용자의 재수락은 409로 거부한다.
 
-`RefreshSession`은 갱신·로그아웃(API §1.1)을 지원하기 위한 추가 설계다. 원본 refresh token 대신 해시를 저장한다. 갱신 시 이전 행을 폐기하고 새 토큰/행을 발급하는 작업을 원자적으로 처리하며, 로그아웃은 해당 세션을 폐기한다. access JWT는 테이블에 저장하지 않는다. Device Flow의 일시적인 코드는 만료가 있는 인증 상태로 취급하며 핵심 ERD에서 제외한다.
+`RefreshSession`은 갱신·로그아웃(API §1.1)을 지원하기 위한 추가 설계다. 원본 refresh token 대신 해시를 저장하고 `familyId`로 교체된 토큰을 같은 세션 계열에 연결한다. 만료 기간은 30일이다. 갱신 시 이전 행을 폐기하고 같은 familyId의 새 토큰/행을 발급하는 작업을 원자적으로 처리한다. 폐기된 토큰의 재사용을 감지하면 해당 계열을 폐기하고, 로그아웃은 현재 기기 세션을 폐기한다. 재사용 감지를 위해 폐기된 해시와 familyId를 해당 세션 계열이 만료될 때까지 보관한다. access JWT는 테이블에 저장하지 않는다. Device Flow의 일시적인 코드는 만료가 있는 인증 상태로 취급하며 핵심 ERD에서 제외한다.
 
 ## 3. 서버 ERD — 에이전트 실행과 경고
 
@@ -314,7 +315,7 @@ erDiagram
 | 엔터티 | 제약 및 인덱스 | 용도 |
 |---|---|---|
 | User | PK `id`; UNIQUE `githubId` (NULL 가능) | GitHub 계정 중복 방지 |
-| RefreshSession | PK `id`; UNIQUE `tokenHash`; INDEX `userId`, `expiresAt` | 토큰 검증·세션 폐기·만료 정리 |
+| RefreshSession | PK `id`; UNIQUE `tokenHash`; INDEX `userId`, `expiresAt`, `familyId` | 토큰 검증·계열 폐기·만료 정리 |
 | Workspace | PK `id`; `configVersion >= 0` | 현재 버전 관리 |
 | Membership | PK `(workspaceId, userId)`; INDEX `userId` | 중복 가입 방지·내 팀 목록 |
 | ConfigVersion | PK `(workspaceId, version)`; `version >= 1` | 버전 중복 방지·이력 조회 |
@@ -341,15 +342,15 @@ erDiagram
 | 항목 | 기존 문서의 차이 또는 누락 | ERD의 처리 |
 |---|---|---|
 | 실행 요약 | PRD와 API에는 AgentRun이 있지만 DB 초안에는 없음 | AgentRun 추가 |
-| 인증 세션 | API에 갱신·로그아웃이 있지만 저장 모델 없음 | RefreshSession 추가. 토큰 회전과 재사용 감지 상세 정책은 인증 구현 시 확정 |
+| 인증 세션 | API에 갱신·로그아웃이 있지만 저장 모델 없음 | 기기별 세션, 30일 만료, 회전·계열별 재사용 감지 적용 (API §6.3) |
 | 개발 로그인 | DB 초안의 githubId는 필수, 개발 API는 displayName만 받음 | githubId를 NULL 가능으로 제안. 표시명만으로 기존 계정을 선택하지 않고 개발 계정을 별도 생성 |
 | 응답 필드 | DB 초안에 discordUrl, summary, 경고 title/file/branch/run IDs/actions/note 누락 | 대응 열 추가. 초대 createdAt/acceptedAt, 경고 updatedAt/feedbackAt도 추가 제안 |
 | 경고 근거 | DB 초안은 이벤트 ID 배열 | AlertEvidence로 정규화하고 API 배열 형식은 유지 |
 | 경고 상태 | 목록 필터는 대문자, 응답은 소문자 | DB와 필터는 대문자, 응답은 소문자로 변환 |
-| seq 표현 | DB는 BigInt, API 예시는 JSON 숫자 | API를 10진 문자열로 통일하는 안을 제안. 합의 전에는 숫자를 안전 정수 범위로 제한해야 함. 로컬은 문자열 저장 |
-| Hook Stop | API §4.3은 idle, §5.3은 done에 대응 | 상태 모델은 둘 다 지원. 변환 규칙은 protocol 구현 전 통일 |
-| 마지막 팀장·초대 재수락 | 경계 조건과 오류 코드 미정 | 마지막 LEADER 제거는 거부, 같은 수락자의 재요청은 멱등 처리, 타인의 재수락은 거부하는 안 |
-| 제목 공유 해제 | 신규 송신·수신 시 null 처리만 정의 | 신규 이벤트와 실행 요약에 적용. 기존 이력까지 지울지는 추가 합의 필요 |
+| seq 표현 | DB는 BigInt, API와 로컬은 10진 문자열 | API §6.1에서 문자열로 확정. 초기 커서는 `"0"` |
+| Hook Stop | API §4.3·§5.3 | Stop은 done, 사용자 확인이 감지되면 idle (API §6.5) |
+| 마지막 팀장·초대 재수락 | API §6.3 | 마지막 LEADER 탈퇴·강등은 409, 같은 수락자의 재요청은 멱등, 타인의 재수락은 409 |
+| 제목 공유 해제 | API §6.5 | 신규 이벤트와 실행 요약에 적용. 기존 이력과 파생 경고는 자동 삭제하지 않고 UI에 안내 |
 | 여러 기기의 적용 상태 | 현재 API는 사용자 단위 appliedVersion만 지원 | P0는 마지막 보고값 저장. 기기별 관리가 필요하면 ClientDevice와 기기별 동기화 상태 추가 |
 | 부분 적용 | 즉시 적용·승인 대기는 정의되어 있으나 상세 상태 표현 없음 | 로컬에 적용된 스냅샷과 대기 스냅샷 보관. 단계별 서버 보고는 API 확장 필요 |
 
