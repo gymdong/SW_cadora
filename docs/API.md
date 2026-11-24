@@ -7,7 +7,7 @@
 | 기준 | [`PRD.md`](PRD.md) v1.3, [`ARCHITECTURE.md`](ARCHITECTURE.md) v0.1, `prototype/sim.js`의 이벤트 모양 |
 | 범위 | §1 서버 REST · §2 서버 WebSocket · §3 데스크톱 IPC · §4 로컬 Hook 수신 · §5 에이전트 런타임 어댑터 |
 
-스키마의 원본은 `packages/protocol`(zod)이고, 이 문서는 그 설명이다. 둘이 다르면 코드가 맞고 이 문서를 고친다.
+REST·WebSocket 계약은 이 문서와 공통 계약 사례를 기준으로 한다. 데스크톱은 `packages/protocol`의 zod를, Java 서버는 자체 DTO·검증을 사용하며 공통 사례로 일치 여부를 검증한다. 계약 변경은 협업 규칙에 따른다.
 
 ---
 
@@ -31,7 +31,12 @@
 | 403 | `forbidden` | 역할 부족 (예: 팀원이 공유 설정 수정) |
 | 404 | `not_found` | |
 | 409 | `config_conflict` | 공유 설정 `baseVersion`이 최신이 아님 |
+| 409 | `last_leader` | 마지막 팀장의 탈퇴·강등 |
+| 409 | `invite_already_used` | 다른 사용자가 수락한 초대 |
+| 403 | `device_denied` | GitHub 기기 인증 거부 |
+| 410 | `device_expired` | GitHub 기기 코드 만료 |
 | 410 | `invite_expired` | 초대 만료·회수 |
+| 429 | `slow_down` | 기기 인증 polling 간격 초과 |
 | 422 | `privacy_violation` | 이벤트에 금지 필드가 섞임 (§2.3) |
 
 ---
@@ -70,6 +75,7 @@
 | `GET /workspaces/:id/members` | 멤버 | `[{ userId, displayName, role, appliedVersion, onboarding, online }]` |
 | `PATCH /workspaces/:id/members/:userId` | LEADER | `{ role }` |
 | `DELETE /workspaces/:id/members/:userId` | LEADER 또는 본인 | 204 (탈퇴·내보내기) |
+| `GET /workspaces/:id/members/me/privacy` | 본인 | `{ shareTaskTitle: boolean }` |
 | `PATCH /workspaces/:id/members/me/privacy` | 본인 | `{ shareTaskTitle: boolean }` (FR-18) |
 
 ### 1.4 공유 층 설정 (FR-08)
@@ -166,9 +172,9 @@ wss://<host>/v1/ws          헤더 Authorization: Bearer <accessToken>
 
 ```json
 → { "t": "hello", "rid": "r1", "client": { "app": "desktop", "version": "0.1.0", "os": "win32" },
-    "workspaces": [{ "id": "ws_cap", "afterSeq": 1200 }] }
+    "workspaces": [{ "id": "ws_cap", "afterSeq": "1200" }] }
 ← { "t": "hello.ok", "rid": "r1", "serverTime": "2026-11-23T05:10:00Z" }
-← { "t": "event", "seq": 1201, "event": { … } }      // afterSeq 이후 놓친 것부터 재생
+← { "t": "event", "seq": "1201", "event": { … } }      // afterSeq 이후 놓친 것부터 재생
 ```
 
 ### 2.2 메시지 종류
@@ -247,7 +253,7 @@ type Observe = "hooks" | "herdr" | "process";   // 관찰 수준 (UI에 표시, 
 
 ### 2.4 경고 메시지
 
-서버의 `rules` 모듈이 이벤트를 저장할 때마다 멤버별로 `core.computeAlerts()`를 돌리고, 새로 생긴 경고만 보낸다. 같은 `key`는 한 번만 만든다.
+서버의 Java `rules` 모듈이 이벤트를 저장할 때마다 공통 검증 사례와 일치하는 경고 규칙을 멤버별로 실행하고, 새로 생긴 경고만 보낸다. 같은 `(workspaceId, recipientId, key)`는 한 번만 만든다.
 
 ```ts
 type Alert = {
@@ -287,7 +293,7 @@ interface CadoraAPI {
   workspace: {
     list(): Promise<LocalWorkspace[]>;                       // 개인 + 팀(개인 층 포함)
     create(input: CreateWorkspaceInput): Promise<LocalWorkspace>;   // FR-01
-    update(id: string, patch: Partial<LocalWorkspaceSettings>): Promise<LocalWorkspace>;
+    update(id: string, patch: { name?: string; settings?: Partial<LocalWorkspaceSettings> }): Promise<LocalWorkspace>;
     remove(id: string): Promise<void>;
     activate(id: string): Promise<void>;                     // 전면 표시
     setState(id: string, state: "background" | "sleep"): Promise<void>;   // FR-04
@@ -297,6 +303,7 @@ interface CadoraAPI {
     closeTab(wsId: string, tabId: string): Promise<void>;
     listTabs(wsId: string): Promise<{ shared: TabInfo[]; private: TabInfo[] }>;   // FR-08
     showView(wsId: string, tabId: string, bounds: Rect): void;   // WebContentsView 배치
+    openDownloadFolder(wsId: string): Promise<void>;
     openExternal(wsId: string, url: string): Promise<void>;      // S1 대안: 외부 브라우저 프로필
   };
   scripts: {
@@ -319,6 +326,13 @@ interface CadoraAPI {
   team: {
     login(): Promise<{ userCode: string; verificationUri: string }>;   // Device Flow 시작
     me(): Promise<Me | null>;
+    logout(): Promise<void>;
+    getPrivacy(wsId: string): Promise<{ shareTaskTitle: boolean }>;
+    listMembers(wsId: string): Promise<Member[]>;
+    updateMemberRole(wsId: string, userId: string, role: Role): Promise<void>;
+    removeMember(wsId: string, userId: string): Promise<void>;
+    listInvites(wsId: string): Promise<Invite[]>;
+    revokeInvite(inviteId: string): Promise<void>;
     createWorkspace(input: { name: string; type: WorkspaceType; fromLocalId?: string }): Promise<LocalWorkspace>;
     invite(wsId: string, role: Role): Promise<{ url: string; expiresAt: string }>;
     previewInvite(code: string): Promise<InvitePreview>;
@@ -330,6 +344,7 @@ interface CadoraAPI {
   };
   alerts: {
     list(wsId: string): Promise<Alert[]>;
+    evidence(alertId: string): Promise<TeamEvent[]>;
     act(alertId: string, action: "dismiss" | "handled"): Promise<void>;
     notifyAgent(alertId: string, runId: string): Promise<{ delivered: boolean }>;  // FR-16, 사용자 승인 후
     feedback(alertId: string, useful: boolean): Promise<void>;
@@ -339,6 +354,8 @@ interface CadoraAPI {
 
 interface CadoraEvents {
   "workspace:changed": LocalWorkspace;
+  "team:inviteReceived": { code: string };
+  "team:authChanged": { status: "pending" | "authenticated" | "expired" | "denied" | "logged_out" };
   "download:done": { wsId: string; fileName: string; savedTo: string };        // FR-05 알림
   "process:state": ProcessInfo;
   "agent:status": { runId: string; status: AgentStatus; last?: string };
@@ -420,7 +437,7 @@ Content-Type: application/json
 | `UserPromptSubmit` | 시각만 | **prompt 전체**, session_id, cwd | `agent_activity(user_input)` |
 | `PostToolUse` (Edit/Write/MultiEdit) | `tool_input.file_path` → `core.toRelative` → `core.classify` | old_string, new_string, content, tool_response | `file_change(source: hook:PostToolUse)` (제외·민감 파일이면 없음) |
 | `Notification` | 알림 종류 | 메시지 원문 | `agent_status(waiting)` |
-| `Stop` | — | — | `agent_status(idle)` |
+| `Stop` | — | — | `agent_status(done)` |
 | `SessionEnd` | — | — | `agent_run(status: exited)` |
 
 같은 파일 변경을 hook과 chokidar가 모두 잡으면 1초 안의 같은 `relativePath`는 hook 쪽만 보낸다.
@@ -474,3 +491,222 @@ Herdr 서버의 로컬 소켓(Windows는 named pipe)에 줄 단위 JSON으로 �
 ### 5.4 PtyRuntime
 
 node-pty(ConPTY)로 `claude` / `codex`를 워크스페이스 cwd와 env로 실행한다. 상태는 hook(Claude Code) 또는 프로세스 생존 여부(Codex)로만 판단하므로 `observe`가 `hooks` 또는 `process`가 된다. Windows 종료는 `taskkill /PID <pid> /T /F`로 프로세스 트리를 정리한다.
+
+---
+
+## 6. 확정된 구현 계약
+
+이 절은 §0~5의 세부 동작을 정의한다. 데스크톱 API 타입과 검증은 `packages/protocol`에, 서버 타입과 검증은 Java에 구현하고 공통 계약 사례로 일치를 검증한다. 역할 변경, 개인정보와 인증은 클라이언트와 서버 경계 모두에서 검증한다.
+
+### 6.1 공통 데이터 타입
+
+```ts
+type Role = "LEADER" | "MEMBER" | "VIEWER";
+type WorkspaceType = "DEV_TEAM" | "ASSIGNMENT" | "CONTEST" | "CUSTOM";
+type Seq = string; // 0 또는 선행 0 없는 양의 10진수. 서버 BigInt 범위까지
+type User = { id: string; displayName: string; avatarUrl: string | null };
+type Workspace = { id: string; name: string; type: WorkspaceType; configVersion: number; discordUrl: string | null };
+type Me = User & { workspaces: Array<{ id: string; name: string; role: Role }> };
+type Member = { userId: string; displayName: string; role: Role; appliedVersion: number; onboarding: Onboarding | null; online: boolean };
+type Invite = { id: string; role: Role; expiresAt: string };
+type Onboarding = {
+  steps: Array<{ id: "clone" | "install" | "secrets" | "services" | "server"; status: "pending" | "running" | "done" | "failed" | "skipped"; detail?: string }>;
+  services: Array<{ id: string; done: boolean }>;
+};
+type AgentStatus = "working" | "waiting" | "idle" | "done" | "unknown";
+type AgentRunInfo = { id: string; workspaceId: string; userId: string; tool: Tool; taskTitle: string | null; branch: string; runStatus: "running" | "stopped" | "exited" | "error"; agentStatus: AgentStatus; observe: Observe; lastActivityAt: string | null };
+type ProcessInfo = { id: string; workspaceId: string; scriptId: string; status: "running" | "stopped" | "exited" | "error"; exitCode: number | null };
+type TabInfo = { id: string; title: string; url: string; pinned: boolean };
+type Rect = { x: number; y: number; width: number; height: number };
+type InvitePreview = { workspaceName: string; inviterName: string; role: Role; expiresAt: string };
+type TeamEvent = EventBase & ({ type: "agent_run"; agentRunId: string; tool: Tool; taskTitle: string | null; branch: string; status: "running" | "stopped" | "exited" | "error"; observe: Observe }
+  | { type: "agent_status"; agentRunId: string; status: AgentStatus; source: "herdr" | "hook" | "process" }
+  | { type: "agent_activity"; agentRunId: string; activity: "user_input" | "tool_use" | "turn_end" }
+  | { type: "file_change"; agentRunId: string | null; tool: Tool | null; taskTitle: string | null; branch: string; relativePath: string; changeType: "added" | "modified" | "deleted"; category: "db-schema" | "dependency" | "infra" | "test" | "api" | "ui" | "docs" | "code"; source: "hook:PostToolUse" | "watcher" | "git" });
+type CreateWorkspaceInput = { name: string; type: WorkspaceType; settings: LocalWorkspaceSettings };
+type ConfigChange = { path: string; requiresApproval: boolean };
+```
+
+서버 API의 `Workspace.id`는 원격 ID다. `window.cadora`의 `wsId`는 달리 적지 않으면 로컬 ID이며 main이 팀 워크스페이스의 `remoteId`로 변환한다. `AgentRunInfo.workspaceId`, `ProcessInfo.workspaceId`는 호출 경계에 따라 서버는 원격 ID, IPC는 로컬 ID를 반환한다. `Seq`는 REST·WebSocket에서 10진 문자열로 전송하고 `afterSeq` 쿼리도 같은 형식이다. 초기 커서는 `"0"`이다.
+
+### 6.2 IPC와 로컬 소유권
+
+`workspace.update`는 로컬 이름과 개인 설정을 갱신한다. 팀의 공유 이름 변경은 LEADER가 서버 `PATCH /workspaces/:id`를 사용하며 로컬 이름 갱신과 별도로 처리한다. `browser.openDownloadFolder`는 main이 로컬 설정에서 경로를 찾아 연다. `alerts.evidence`는 해당 경고 수신자만 정제된 이벤트 목록을 받는다.
+
+`team:inviteReceived`는 main이 검증한 초대 코드만 전달한다. 앱 준비 전 링크는 큐에 보관하여 구독 준비 후 한 번 전달한다. 인증 상태는 `team:authChanged`로 통지하며 토큰은 renderer에 전달하지 않는다. `team.logout`은 현재 기기의 인증 세션을 폐기한다. `getPrivacy`는 현재 팀의 본인 설정을 반환한다.
+
+IPC의 `Promise` 실패는 직렬화 가능한 `{ code, message, details? }` 오류로 전달하고 `code`는 §0의 REST 오류와 같은 의미로 사용한다. 민감한 원문은 오류나 로그에 넣지 않는다. `on`이 반환한 함수는 리스너를 제거한다.
+
+### 6.3 인증과 권한
+
+- GitHub Device Flow는 발급받은 `interval` 이상을 기다리며 polling한다. 승인 전은 202 `pending`, 사용자 거부는 403 `device_denied`, 기기 코드 만료는 410 `device_expired`, 과도한 polling은 429 `slow_down`과 `details.retryAfterSeconds`를 반환한다. 만료·거부 후 새 코드를 발급한다.
+- refresh token은 기기별 세션으로 관리하며 서버에는 해시만 저장한다. 만료 기간은 30일이다. 갱신은 원자적으로 새 토큰을 발급하고 이전 토큰을 폐기한다. 재사용을 감지하면 해당 세션 계열을 폐기하고 재로그인을 요구한다. 클라이언트는 동시 갱신을 하나로 합치며 갱신 응답 유실 시 재로그인한다. 로컬 refresh token은 safeStorage로 보호한다.
+- `LEADER`는 멤버 기능과 팀·설정·초대·멤버 관리를 수행한다. `MEMBER`는 팀 정보·설정·활동을 조회하고 자신의 이벤트와 동기화 상태를 발행한다. `VIEWER`는 팀 기본 정보와 공용 설정·자료만 조회하며 팀 활동·이벤트·경고 조회, 이벤트 발행과 팀 변경은 허용하지 않는다. 모든 역할은 자신의 제목 공유 설정을 변경할 수 있다. WS 구독·발행도 같은 권한을 적용하며 탈퇴 시 기존 구독을 해제한다.
+- 마지막 LEADER의 탈퇴·강등은 409 `last_leader`로 거부한다. 팀 삭제는 LEADER만 수행한다. 이 규칙은 UI뿐 아니라 서버에서 강제한다.
+- 초대는 1인 수락이다. 같은 사용자의 반복 수락은 기존 가입 결과를 반환하고, 다른 사용자의 재수락은 409 `invite_already_used`다. 초대의 만료·회수는 410이다. 초대 수락과 멤버십 생성은 원자적으로 처리한다.
+
+### 6.4 이벤트 재전송과 재연결
+
+1. main은 개인정보 검사를 통과한 팀 이벤트만 계정·팀별 영속 큐에 저장한다. 서버는 인증과 소속을 확인한 후 저장·실행 요약·경고를 원자적으로 처리하고 커밋 후 ACK한다.
+2. 같은 사용자·팀·정규화된 내용으로 같은 UUID를 재전송하면 원래 `seq`를 ACK하고 경고를 다시 만들지 않는다. 내용이나 소유자가 다른 ID 재사용은 `event_id_conflict`로 거부한다. 다른 계정의 큐는 전송하지 않는다.
+3. 서버는 워크스페이스별 이벤트 수신을 직렬화하여 같은 팀의 순번과 커밋 순서가 일치하게 한다. 전역 seq의 팀 내 결번은 허용한다. 클라이언트는 ACK를 받은 송신 항목만 삭제한다.
+4. 재접속 시 `afterSeq` 이후 이벤트를 순서대로 다시 받는다. 서버는 구독 등록과 재생 사이의 실시간 이벤트를 버퍼링해 누락 없이 전달한다. 클라이언트는 ID로 중복을 제거하고 처리된 순서대로 수신 커서를 저장한다.
+5. 설정·경고·멤버·활성 실행은 재연결 후 REST로 다시 조회한다. 조회와 실시간 알림이 겹치면 변경 알림을 버퍼링하고 조회 완료 후 처리하며 설정은 버전을 비교한다. 접속 상태는 연결별 일시 상태로 계산한다.
+
+### 6.5 상태, 공개 범위, 경고
+
+Hook `Stop`은 `done`이다. 사용자 확인을 감지하면 `idle`, 새 작업 시작은 `working`이다. 확인을 감지할 수 없으면 `done`을 유지한다. 프로세스의 `agent_run` 종료와는 별개다.
+
+`shareTaskTitle`을 끄면 이후 이벤트와 실행 요약의 제목은 null이다. 기존 이력이나 파생 경고는 자동 삭제하지 않으며 UI에서 이를 안내한다. 기존 이력 삭제 API는 P0에 포함하지 않는다.
+
+경고 중복은 `(workspaceId, recipientId, key)` 기준이다. 목록 상태 필터는 §1.8의 대문자, 응답 status는 §2.4의 소문자를 사용한다. 입력 변환은 서버에서 수행한다. 각 수신자는 자신의 경고·근거·피드백만 조회하거나 수정하며 원인 사용자에게는 `alert.caused`의 최소 정보만 보낸다.
+
+### 6.6 개인정보와 안전한 공유
+
+이벤트의 허용 필드만 받고 §2.3의 금지 필드 검사를 로컬·서버 양쪽에서 실행한다. 프로젝트 기준 상대경로만 팀 이벤트로 전송한다. 인증정보·개인 브라우저 세션·개인 탭·OS 절대경로·코드와 프롬프트 원문은 이벤트와 로그에 기록하지 않는다. 공유 설정의 `aiRules.content`는 팀장이 의도적으로 입력한 공유 규칙으로 이벤트 코드 본문 금지와 구분한다. 서버 비밀값 금고는 P1이며 §1.9의 보안 설계 전 구현하지 않는다.
+
+### 6.7 P0 검증 시나리오
+
+1. A가 팀을 만들고 B를 초대한다. B의 재수락은 멱등이고 C의 동일 초대 사용은 거부된다. 마지막 팀장의 탈퇴·강등은 거부된다.
+2. A의 공유 탭 변경이 B에 반영되고 B의 개인 탭은 유지된다. 설치·스크립트·재시작은 사용자 승인 후에만 수행된다.
+3. A의 DB 스키마 변경과 B의 실행 중인 에이전트가 있을 때 B에게만 경고와 근거를 표시한다. 다른 팀 사용자와 VIEWER는 활동·경고를 조회할 수 없다.
+4. ACK 유실과 재접속 후 이벤트는 중복 저장 없이 재생되며, 코드·프롬프트·자격증명·절대경로는 원격 이벤트와 로그에 없다.
+
+---
+
+## 7. P0 REST 구현 세부 계약
+
+이 절의 타입 표기는 §1과 §6의 타입을 사용한다. `?`는 필드 생략 가능, `| null`은 필드가 존재하며 값이 null일 수 있음을 뜻한다. 이 절의 응답에서 명시하지 않은 필드는 보내지 않는다. JSON 요청의 `Content-Type`은 `application/json`, 시각은 §0을 따른다. API 경로에는 §0의 `/v1`이 앞에 붙는다. `204`는 본문이 없다.
+
+### 7.1 인증과 오류
+
+| 요청 | 인증 | 요청 본문 | 성공 응답 | 추가 오류 |
+|---|---|---|---|---|
+| `POST /auth/github/device` | 불필요 | `{}` | 200 `{ deviceCode: string, userCode: string, verificationUri: string, interval: number, expiresIn: number }` | 인증 제공자 장애 시 503 |
+| `POST /auth/github/poll` | 불필요 | `{ deviceCode: string }` | 대기 202 `{ status: "pending" }`; 완료 200 `{ accessToken: string, refreshToken: string, user: User }` | §6.3 거부·만료·간격 초과 |
+| `POST /auth/refresh` | 불필요 | `{ refreshToken: string }` | 200 `{ accessToken: string, refreshToken: string }` | 유효하지 않거나 폐기된 토큰 401 |
+| `POST /auth/logout` | access token | `{ refreshToken: string }` | 204 | 본인 세션이 아닌 토큰 403; 유효하지 않은 토큰 401 |
+| `POST /auth/dev-login` | 불필요 | `{ displayName: string }` | 200 `{ accessToken: string, refreshToken: string, user: User }` | production에서는 404 |
+| `GET /me` | access token | 없음 | 200 `Me` | 공통 오류 |
+
+`interval`, `expiresIn`과 `details.retryAfterSeconds` 단위는 초다. Device Flow는 로그인된 Cadora 사용자와 무관한 사전 인증 단계다. 기기 코드·토큰은 로그에 남기지 않는다. access token은 §0의 15분, refresh token은 §6.3의 30일을 따른다.
+
+공통 오류는 §0의 `{ "error": { "code": string, "message": string, "details"?: object } }`다. 요청 JSON 형식 오류·누락된 필수 필드·허용하지 않은 열거값은 400 `invalid_request`; 인증 실패는 401 `unauthenticated`; 권한 실패는 403 `forbidden`; 자원이 없거나 이 API에서 숨기는 자원은 404 `not_found`다. JSON 필드 검증 실패 시 `details.fields`는 `{ path: string, message: string }[]`를 사용할 수 있으며 요청 원문은 포함하지 않는다. 예상하지 못한 서버 오류는 500 `internal_error`, 외부 인증 제공자 장애는 503 `provider_unavailable`로 반환한다.
+
+```json
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "요청 값을 확인하세요.",
+    "details": { "fields": [{ "path": "name", "message": "이름이 필요합니다." }] }
+  }
+}
+```
+
+### 7.2 워크스페이스와 멤버
+
+모든 항목은 access token을 요구하며 `:id`는 서버 워크스페이스 ID다. 아래의 `WorkspaceDetail`은 `Workspace & { myRole: Role }`이다. `Workspace`와 `discordUrl`의 null 처리는 §6.1을 따른다.
+
+| 요청 | 요청 본문 | 성공 응답 | 권한·조건 |
+|---|---|---|---|
+| `POST /workspaces` | `{ name: string, type: WorkspaceType, config?: SharedConfig }` | 201 `Workspace` | 로그인 사용자. 생성자는 LEADER. config가 있으면 version 1, 없으면 0 |
+| `GET /workspaces` | 없음 | 200 `WorkspaceDetail[]` | 본인이 속한 팀만 반환 |
+| `GET /workspaces/:id` | 없음 | 200 `WorkspaceDetail` | 현재 멤버 |
+| `PATCH /workspaces/:id` | `{ name?: string, discordUrl?: string | null }` | 200 `Workspace` | LEADER. 적어도 한 필드 필요; null은 Discord 링크 삭제 |
+| `DELETE /workspaces/:id` | 없음 | 204 | LEADER |
+| `GET /workspaces/:id/members` | 없음 | 200 `Member[]` | LEADER 또는 MEMBER |
+| `PATCH /workspaces/:id/members/:userId` | `{ role: Role }` | 200 `Member` | LEADER; 마지막 LEADER 강등은 409 `last_leader` |
+| `DELETE /workspaces/:id/members/:userId` | 없음 | 204 | LEADER 또는 본인; 마지막 LEADER 탈퇴는 409 `last_leader` |
+| `GET /workspaces/:id/members/me/privacy` | 없음 | 200 `{ shareTaskTitle: boolean }` | 본인 |
+| `PATCH /workspaces/:id/members/me/privacy` | `{ shareTaskTitle: boolean }` | 200 `{ shareTaskTitle: boolean }` | 본인 |
+
+`GET /workspaces`는 가입된 팀이 없으면 `[]`다. ID가 같은 사용자의 멤버십은 팀당 하나다. 서버에서 `userId`를 인증 주체로부터 확인하며, 클라이언트가 다른 사람의 개인정보 설정이나 온보딩을 변경할 수 없다. `VIEWER`의 팀 기본 정보·공용 설정 외 접근 제한은 §6.3을 따른다.
+
+### 7.3 설정과 초대
+
+`ConfigSnapshot = { version: number, config: SharedConfig, authorId: string, createdAt: string }`, `ConfigHistoryItem = { version: number, authorId: string, createdAt: string, summary: string }`이다. 버전은 워크스페이스별 1부터 증가한다. 버전 0은 스냅샷이 없는 상태다.
+
+| 요청 | 요청·조건 | 성공 응답 | 주요 오류 |
+|---|---|---|---|
+| `GET /workspaces/:id/config` | 멤버 | 200 `ConfigSnapshot` | 스냅샷이 없으면 404 `not_found` |
+| `GET /workspaces/:id/config/:version` | 멤버; 양의 정수 버전 | 200 `ConfigSnapshot` | 해당 버전 없음 404 |
+| `GET /workspaces/:id/config/history?limit=20` | 멤버; 최신순 | 200 `ConfigHistoryItem[]` | 잘못된 limit 400 |
+| `PUT /workspaces/:id/config` | LEADER; `{ baseVersion: number, config: SharedConfig, summary: string }` | 200 `{ version: number }` | 현재 버전과 불일치 시 409 `config_conflict`, `details.current`에 현재 버전 |
+| `PUT /workspaces/:id/members/me/sync` | 본인; `{ appliedVersion: number, onboarding: Onboarding }` | 204 | 존재하지 않는 적용 버전이나 최신보다 큰 버전은 400 |
+| `POST /workspaces/:id/invites` | LEADER; `{ role: Role, expiresInHours: number }` | 201 `{ id: string, code: string, url: string, expiresAt: string }` | 잘못된 역할·만료시간 400 |
+| `GET /workspaces/:id/invites` | LEADER; 미수락·미회수·미만료만 | 200 `Invite[]` | 공통 오류 |
+| `DELETE /invites/:inviteId` | 해당 팀 LEADER | 204 | 없는 초대 404 |
+| `GET /invites/:code` | 로그인 | 200 `InvitePreview` | 만료·회수 410 `invite_expired` |
+| `POST /invites/:code/accept` | 로그인; `{}` | 200 `{ workspace: Workspace, config: ConfigSnapshot | null }` | 만료·회수 410; 다른 사용자가 이미 수락 409 |
+
+설정이 없는 팀의 초대 수락은 `config: null`이다. 처음 설정할 때 `baseVersion: 0`을 사용한다. 초대 수락 재요청의 멱등성·최종 팀장 보호는 §6.3을 따른다. `summary`는 이력에 표시되는 작성자 제공 요약이며 민감한 정보가 포함되지 않도록 검증한다. 숫자·문자열 길이 제한의 구체적인 상한과 role별 초대 허용 범위는 §9의 미결정 목록을 따른다.
+
+### 7.4 이벤트와 경고 조회
+
+```ts
+type SequencedEvent = { seq: Seq; event: TeamEvent };
+```
+
+| 요청 | 요청·조건 | 성공 응답 |
+|---|---|---|
+| `GET /workspaces/:id/events?afterSeq=1200&limit=500` | LEADER·MEMBER; `afterSeq`는 §6.1의 문자열, 미지정 시 `0`; seq 오름차순 | 200 `SequencedEvent[]` |
+| `GET /workspaces/:id/runs?active=true` | LEADER·MEMBER; active 생략 시 전체 | 200 `AgentRunInfo[]` |
+| `GET /workspaces/:id/alerts?status=NEW,NOTIFIED` | 본인 경고; 상태 미지정 시 전체 | 200 `Alert[]` |
+| `GET /alerts/:alertId/evidence` | 해당 경고 수신자 | 200 `TeamEvent[]` |
+| `POST /alerts/:alertId/actions` | 수신자; `{ action: "dismiss" | "notified" | "handled" }` | 200 `Alert` |
+| `POST /alerts/:alertId/feedback` | 수신자; `{ useful: boolean, note?: string }` | 204 |
+
+모든 목록의 결과가 없으면 `[]`다. `afterSeq`가 `0`이면 유지 중인 가장 오래된 이벤트부터 조회한다. 이벤트별 커서는 응답 요소의 `seq`다. 동일한 사용자·팀·내용으로 재전송한 이벤트의 ACK는 원래 `seq`를 돌려준다(§6.4). 근거 목록은 `seq` 오름차순이며 `Event.id`와 §2.4의 `evidence`를 연결한다. 기본·최대 limit 및 이벤트 보존 기간은 §9에 남겨 둔다.
+
+## 8. WebSocket·IPC 구현 세부 계약
+
+### 8.1 WebSocket 메시지
+
+연결은 §2.1의 인증 헤더를 사용한다. 각 메시지는 UTF-8 JSON 객체 하나다. `rid`는 같은 연결에서 응답을 기다리는 요청을 구분하는 비어 있지 않은 문자열이며, 요청을 재시도할 때 새로운 `rid`를 사용할 수 있다. 이벤트 중복 제거는 `rid`가 아닌 `event.id`로 한다. `event.userId`는 서버가 인증된 사용자로 덮어쓴다.
+
+```json
+{ "t": "event.publish", "rid": "r42", "event": { "id": "6c1e4f7a-2b0d-4d8e-9a51-0f3b2c7d9e10", "v": 1, "type": "agent_activity", "workspaceId": "ws_example", "userId": "u_example", "at": "2026-11-23T05:10:00Z", "agentRunId": "1f9a0c2e-1234-4123-8123-123456789abc", "activity": "turn_end" } }
+```
+
+```json
+{ "t": "ack", "rid": "r42", "eventId": "6c1e4f7a-2b0d-4d8e-9a51-0f3b2c7d9e10", "seq": "1201" }
+```
+
+```json
+{ "t": "error", "rid": "r42", "code": "privacy_violation", "message": "공유할 수 없는 필드가 포함되어 있습니다." }
+```
+
+`hello`의 각 워크스페이스는 인증 주체가 접근 가능한 범위에서만 구독한다. §6.3에 따라 VIEWER는 팀 활동을 구독·발행할 수 없다. `event.publish`의 검증·중복 처리·ACK 시점은 §6.4를 따른다. ACK 또는 error가 도착하지 않은 요청은 전송 성공으로 처리하지 않는다. `event_id_conflict`, `privacy_violation`, `forbidden`은 재전송을 무한 반복하지 않고 사용자에게 조치가 필요함을 표시한다.
+
+`ping`은 §2.2대로 30초마다 보낸다. `presence.update`, `member.updated`, `config.updated`, `alert` 등은 이벤트 이력 조회에 포함되는 것으로 가정하지 않고 §6.4대로 재접속 후 REST에서 복구한다. 연결 종료·토큰 만료 감지 시 로컬 작업을 중단하지 않는다.
+
+### 8.2 IPC 오류와 식별자
+
+`window.cadora`의 워크스페이스 인자는 §6.1의 로컬 ID다. 서버 REST의 `:id`는 원격 ID이며 renderer가 원격 토큰이나 로컬 절대경로를 서버로 직접 전송하지 않는다. 팀 워크스페이스에서 main이 `remoteId`를 찾아 서버에 전달한다. 이벤트 구독자는 반환된 해제 함수를 화면 해제 시 호출한다.
+
+정상 IPC 결과는 §3의 Promise 반환 타입 그대로다. 실패는 §6.2의 `{ code, message, details? }`를 호출자가 확인할 수 있어야 하며, main과 preload 사이의 직렬화·예외 전달 방식은 구현 이슈 #23에서 실제 Electron으로 검증한다. `void` 메서드의 비동기 오류 전달 경로는 별도 계약 정리가 필요하므로 §9에 둔다.
+
+### 8.3 경계 테스트 사례
+
+- **설정 충돌**: 현재 버전 3에서 `baseVersion: 2`로 저장하면 409 `config_conflict`, `details.current: 3`; 새 버전은 생성하지 않는다.
+- **이벤트 재송신**: 이벤트 `id`가 같고 인증 주체·팀·정규화 내용이 같으면 첫 ACK와 같은 `seq`를 받는다. ID 재사용 내용이 다르면 `event_id_conflict`다.
+- **개인정보**: 이벤트에 `prompt`, 코드 본문 또는 OS 절대경로가 있으면 WS `privacy_violation`으로 거부하고 저장·팬아웃하지 않는다.
+- **권한**: 다른 팀의 이벤트·근거 요청과 VIEWER의 팀 활동 요청은 거부한다. 본인 경고의 근거만 조회할 수 있다.
+- **온보딩**: 공유 설정의 설치·재시작 단계는 사용자가 승인하기 전 실행되지 않는다. 단계 실패를 표시해도 미완료 로그인 때문에 워크스페이스 진입을 강제 차단하지 않는다.
+- **토큰 갱신**: 회전한 refresh token의 재사용을 감지하면 §6.3의 세션 계열 폐기 규칙을 적용한다. 토큰·deviceCode·개인 경로는 오류와 로그에 남지 않는다.
+
+## 9. 구현 전 확인이 필요한 계약 경계
+
+아래 항목은 기존 요구사항을 바꾸지 않고 결정할 수 없는 부분이다. 현재 이 절은 구현 완료로 표시하지 않으며, 관련 담당자와 조율해 결정된 내용을 기존 절에 반영한다. 기존 계약을 변경하는 경우에는 협업 규칙에 따라 변경 전후와 이슈를 사용자에게 알리고 승인받는다.
+
+| 항목 | 확인할 내용 | 관련 이슈 |
+|---|---|---|
+| 목록·입력 제한 | `limit` 기본값·최댓값, 문자열 길이·요청 본문 크기, 잘못된 범위의 오류. 이벤트 이력 보존 기간과 만료 커서의 복구 방식 | #23, #30, #36 |
+| VIEWER 공개 범위 | §6.3은 공용 설정 조회를 허용하지만 `SharedConfig`에는 scripts·AI 규칙·비밀값 이름도 포함된다. 열람자의 노출 필드와 config·member.updated WS 수신 범위를 계약으로 확정해야 한다. | #23, #30, #32, #36 |
+| 초대 재수락과 권한 | 만료 또는 회수 후 동일 사용자의 재수락 우선순위, 이미 가입한 사용자의 초대 수락, 초대로 부여할 수 있는 역할을 정한다. | #23, #30 |
+| 경고 상태 전이 | `new`에서 각 액션과 반복 요청을 처리할 때의 허용 전이·충돌 오류와 피드백 갱신 정책을 정한다. | #23, #38 |
+| IPC 비동기 오류 | `showView`, `terminal.write/resize/close`는 void인데 실패를 표시하는 공통 이벤트가 없다. 사용자에게 전달할 방식과 호출 순서·종료 후 요청을 정의한다. | #23, #24, #28 |
+| 타입 경계 | `AgentRunInfo`가 REST와 로컬 IPC에서 동일한 필드를 제공하는지, `ConfigChange`의 path와 승인 ID가 어떻게 대응하는지, `TerminalStream` 인터페이스를 정의한다. | #23, #28, #33 |
+| 이벤트 무결성 | `file_change`가 미등록 `agentRunId`를 참조하거나 이벤트가 순서가 다르게 도착할 때 소유권 검증·재처리·상태 복원을 구체화한다. | #23, #35, #36 |
+| 실행 확인 | `requiresApproval`, `autoStart`, 개인 스크립트 수동 실행과 온보딩 clone/install에 대한 승인 범위·승인 취소를 통일한다. | #23, #28, #33, #34 |
+| P1 비밀값 API | §1.9는 보안 설계 후 확정할 P1 초안이다. 암호화·권한·리스·감사·회수 정책 전에는 구현 계약으로 취급하지 않는다. | FR-10 후속 작업 |
