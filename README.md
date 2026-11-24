@@ -145,7 +145,7 @@ hotfix/*      ──PR(직접 병합)──────────────�
 |---|---|---|
 | `dev` (기본 브랜치) | 개발 통합. 모든 작업 PR의 대상 | squash, CI·PR 제목 통과 시 **자동 머지** |
 | `main` | 최종본(릴리스). `dev`·`hotfix/*`에서 온 PR만 허용 | **merge commit**, 관리자가 직접 병합 |
-| `<type>/<설명>` | 작업 브랜치 — 예: `feat/browser-partition`, `fix/pty-kill-tree` | — |
+| `<type>/<이슈번호>-<설명>` | 이슈별 작업 브랜치 — 예: `feat/24-workspace-storage`, `fix/20-pty-kill-tree` | — |
 
 - `dev`→`main`은 반드시 **"Create a merge commit"**으로 병합합니다. squash하면 두 브랜치 히스토리가 갈라져 다음 릴리스 PR에서 충돌이 납니다.
 - `hotfix/*`로 `main`을 고쳤다면 같은 변경을 `dev`에도 PR로 반영합니다.
@@ -165,7 +165,7 @@ release: v0.1.0                      # dev → main
 ### PR 흐름
 
 1. 이슈 생성 (기능 요청 템플릿에 FR 번호·우선순위 기입)
-2. `dev`에서 브랜치 생성 → 작업 → `dev`로 PR 생성 (PR 템플릿 작성)
+2. 이슈마다 `dev`에서 `<type>/<이슈번호>-<설명>` 브랜치를 만들고 해당 이슈를 기준으로 작업한다. 하나의 이슈를 기준으로 PR 하나를 `dev`에 생성하고 PR 템플릿에 관련 이슈를 연결한다. PR 병합으로 이슈가 완료될 때는 `Closes #24`처럼 종료 키워드를 사용한다.
 3. PR을 열면 자동 머지가 켜지고, **CI(`ci-passed`)와 PR 제목 검사(`pr-title`)가 통과하면 자동으로 squash merge** 후 브랜치 삭제 (리뷰 승인은 필수 아님)
 4. 아직 머지되면 안 되는 PR은 **Draft**로 열거나 Draft로 전환 → 자동 머지 해제. Ready for review로 바꾸면 다시 켜짐
 5. 릴리스할 때 `dev` → `main` PR(`release: vX.Y.Z`)을 열고 관리자가 merge commit으로 병합
