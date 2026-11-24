@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // 순수 TS 경계: DOM·Node 타입을 넣지 않는다(#22). Java 서버는 같은 규칙을 따로 구현해 공통 테스트 사례로 맞춘다.
+    "lib": ["ES2023"],
+    "types": []
+  },
+  "include": ["src"]
+}

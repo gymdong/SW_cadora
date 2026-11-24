@@ -1,0 +1,22 @@
+# electron-builder 설정 (npm run dist)
+# 설치 파일은 저장소 루트의 release/에 만든다. CD(.github/workflows/cd.yml)가 release/*.exe를 올린다.
+# 경로는 이 파일(apps/desktop) 기준이라 ../../release다.
+appId: io.github.gymdong.cadora
+productName: Cadora
+directories:
+  output: ../../release
+files:
+  - out/**
+asar: true
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: ${productName}-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+linux:
+  # 기본값은 패키지 이름(@cadora/desktop)이라 실행 파일이 '@cadoradesktop'이 된다
+  executableName: cadora

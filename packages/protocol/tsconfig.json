@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // 순수 TS 경계: DOM·Node 타입을 넣지 않는다. 데스크톱 main·preload·renderer가 모두 import한다.
+    "lib": ["ES2023"],
+    "types": []
+  },
+  "include": ["src"]
+}
