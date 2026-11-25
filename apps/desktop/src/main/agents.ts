@@ -59,9 +59,10 @@ export class AgentManager {
 
   private hookCommand(): string {
     const relay = this.relayPath.replace(/\\/g, '/');
-    if (this.nodePath) return `node "${relay}"`;
+    // `|| exit 0`: Cadora를 지운 뒤에도 이 hook이 실패로 끝나 Claude Code에 오류를 띄우지 않게 한다(bash·cmd 모두 동작).
+    if (this.nodePath) return `node "${relay}" || exit 0`;
     // Node가 없으면 Electron의 내장 Node로 relay를 돌린다(Claude Code는 Windows에서 hook을 Git Bash로 실행한다).
-    return `ELECTRON_RUN_AS_NODE=1 "${process.execPath.replace(/\\/g, '/')}" "${relay}"`;
+    return `ELECTRON_RUN_AS_NODE=1 "${process.execPath.replace(/\\/g, '/')}" "${relay}" || exit 0`;
   }
 
   /** hook 설정을 넣는다. 성공하면 true(관찰 수준: hooks), 기존 파일이 깨져 있으면 false(관찰 수준: process). */

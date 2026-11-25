@@ -131,7 +131,7 @@ export class WorkspaceManager {
       type: input.type,
       state: 'background',
       localPath,
-      partition: `persist:ws_${id}`,
+      partition: `persist:${id}`, // id가 ws_<hex>라 persist:ws_<hex> (API.md §3)
       downloadDir: join(localPath, '자료'),
       tabs: [],
       activeTabId: null,
