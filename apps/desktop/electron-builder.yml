@@ -8,6 +8,11 @@ directories:
 files:
   - out/**
 asar: true
+# 게시(publish) 설정을 끈다. 업데이트 정보 파일(latest.yml)도 만들지 않는다.
+# 이 줄이 없으면 CD의 GH_TOKEN을 보고 GitHub 게시로 자동 판단하는데, 모노레포라 apps/desktop에서
+# 저장소를 찾지 못해 빌드가 실패한다(electron-builder 26.18: "Cannot read properties of null (reading 'channel')").
+# 자동 업데이트를 넣을 때 provider·owner·repo를 명시해서 다시 켠다.
+publish: null
 win:
   target:
     - target: nsis
