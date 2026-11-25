@@ -156,6 +156,20 @@ export class BrowserManager {
       if (!isExternalHttpUrl(event.url)) event.preventDefault();
     });
     wc.on('will-attach-webview', (event) => event.preventDefault());
+    // 로그인 팝업에도 같은 제한을 건다: 웹 주소로만 이동하고, 팝업이 또 여는 창도 같은 규칙을 따른다.
+    const guardPopup = (child: BrowserWindow) => {
+      const cwc = child.webContents;
+      cwc.on('will-navigate', (event) => {
+        if (!isExternalHttpUrl(event.url)) event.preventDefault();
+      });
+      cwc.setWindowOpenHandler(({ url }) =>
+        isExternalHttpUrl(url) || url === 'about:blank'
+          ? { action: 'allow', overrideBrowserWindowOptions: { width: 520, height: 720, autoHideMenuBar: true, webPreferences: { partition: w.partition, sandbox: true, contextIsolation: true, nodeIntegration: false } } }
+          : { action: 'deny' },
+      );
+      cwc.on('did-create-window', guardPopup);
+    };
+    wc.on('did-create-window', guardPopup);
     const update = () => this.publish(wsId);
     wc.on('page-title-updated', update);
     wc.on('did-navigate', update);

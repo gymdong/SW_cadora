@@ -76,9 +76,10 @@ let cleanup: (() => Promise<void>) | null = null;
 let quitting = false;
 
 void app.whenReady().then(async () => {
-  // 앱 화면(기본 세션)은 카메라·위치·알림 같은 권한이 필요 없다.
-  session.defaultSession.setPermissionRequestHandler((_wc, _permission, cb) => cb(false));
-  session.defaultSession.setPermissionCheckHandler(() => false);
+  // 앱 화면(기본 세션)은 카메라·위치·알림 같은 권한이 필요 없다. 터미널 복사용 클립보드 쓰기만 허용한다.
+  const APP_PERMISSIONS = new Set(['clipboard-sanitized-write']);
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(APP_PERMISSIONS.has(permission)));
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => APP_PERMISSIONS.has(permission));
 
   const win = createMainWindow();
   setEventTarget(win.webContents);
