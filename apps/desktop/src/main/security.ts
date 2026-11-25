@@ -16,6 +16,21 @@ export function isExternalHttpUrl(rawUrl: string): boolean {
 }
 
 /**
+ * IPC를 보낸 화면이 Cadora 앱 화면인지(보안: 웹 페이지가 window.cadora 기능을 부르지 못하게).
+ * 개발 중에는 Vite 개발 서버 출처, 배포 빌드에서는 앱에 들어 있는 renderer/index.html 파일만 허용한다.
+ */
+export function isAppSenderUrl(senderUrl: string, devServerUrl: string | undefined, rendererFileUrl: string): boolean {
+  try {
+    const u = new URL(senderUrl);
+    if (devServerUrl) return u.origin === new URL(devServerUrl).origin;
+    const expected = new URL(rendererFileUrl);
+    return u.protocol === 'file:' && decodeURIComponent(u.pathname) === decodeURIComponent(expected.pathname);
+  } catch {
+    return false;
+  }
+}
+
+/**
  * 앱 화면 창이 그대로 이동해도 되는 주소인지.
  * 개발 중에는 Vite 개발 서버의 새로고침(HMR)이 같은 출처로 이동하므로 허용하고,
  * 배포 빌드(file://)에서는 어떤 이동도 허용하지 않는다.
