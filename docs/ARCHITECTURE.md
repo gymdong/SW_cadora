@@ -120,8 +120,6 @@ SW_cadora/
 └─ docs/  PRD.md · ARCHITECTURE.md · API.md · ui/
 ```
 
-서버는 Java 26과 Spring Boot 4.2.x를 사용한다. Java 26은 단기 지원 버전이며 Eclipse Temurin의 일반 업데이트는 2026년 9월 종료되었으므로, 팀은 보안 업데이트 경로와 상위 버전 전환 계획을 관리한다. Spring Boot 4.2.x의 구체적인 패치 버전은 서버 골격에 고정한다. 서버 호스팅 업체·환경은 미정이다.
-
 ### 4.1 핵심 의존성
 
 | 영역 | 패키지 | 메모 |
