@@ -71,6 +71,7 @@ export class ProjectWatcher {
           const c = classify(rel);
           if (c.excluded || !rel) continue;
           if (dl && (rel === dl || rel.startsWith(dl + '/'))) continue;
+          if (rel === '.claude/settings.local.json') continue; // Cadora가 넣는 개인 hook 설정(git에서도 빠져 있다)
           if (e.type !== 'delete') {
             try {
               if (statSync(e.path).isDirectory()) continue;
