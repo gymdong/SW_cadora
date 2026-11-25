@@ -54,6 +54,9 @@ erDiagram
         string name
         string type "ASSIGNMENT DEV_TEAM CONTEST CUSTOM"
         int configVersion "default 0"
+        bigint stateRevision "default 0, per workspace"
+        bigint lastEventSeq "default 0, snapshot watermark"
+        bigint deletedEventSeq "default 0, replay deletion watermark"
         string discordUrl "nullable, P1"
         datetime createdAt
     }
@@ -93,6 +96,8 @@ erDiagram
 `User`와 `Workspace`는 `Membership`을 통한 N:M 관계다. 한 사용자가 여러 팀에 속할 수 있고, 역할과 작업 제목 공개 여부는 팀마다 다를 수 있다. 팀 생성자는 같은 트랜잭션에서 `LEADER` 멤버십을 얻는다(API §1.3).
 
 `configVersion = 0`은 아직 공유 스냅샷이 없다는 뜻이다. `appliedVersion = 0`은 아직 적용한 버전이 없다는 뜻이다. 두 열은 0을 허용하므로 `ConfigVersion`에 직접 FK를 걸지 않는다. 양수이면 **같은 워크스페이스의 존재하는 버전**이어야 하며, `appliedVersion <= configVersion`을 서비스 계층에서 검증한다. 현재 버전과 전체 스냅샷 저장은 하나의 트랜잭션으로 처리한다.
+
+`stateRevision`은 이벤트·설정·멤버·경고 등 팀 상태 변경마다 같은 트랜잭션에서 증가한다. `lastEventSeq`는 팀에 마지막으로 커밋된 이벤트의 전역 순번이며 원본 이력이 만료되어도 유지한다. `deletedEventSeq`는 보존 기간에 따라 실제 삭제한 팀 이벤트의 최대 순번이다. 세 값은 DB에서 BigInt로 저장하고 API에서 10진수 문자열로 반환한다. 커서 만료 복구 시 두 기준점과 상태를 한 일관 읽기에서 제공한다(API §10.8.1).
 
 `Membership.onboarding`은 API §1.6의 전체 `onboarding` 객체를 저장한다.
 
@@ -140,13 +145,14 @@ erDiagram
     User ||--o{ AgentRun : owns
     Workspace ||--o{ Event : receives
     User ||--o{ Event : publishes
+    Workspace ||--o{ EventDeduplication : scopes
+    User ||--o{ EventDeduplication : owns
     Workspace ||--o{ Alert : contains
     User ||--o{ Alert : receives
     User ||--o{ Alert : causes
     AgentRun o|--o{ Alert : myRun
     AgentRun o|--o{ Alert : otherRun
     Alert ||--o{ AlertEvidence : cites
-    Event ||--o{ AlertEvidence : supports
 
     User {
         string id PK
@@ -182,6 +188,14 @@ erDiagram
         datetime at
         datetime receivedAt
     }
+    EventDeduplication {
+        string eventId PK "client UUID v4"
+        string workspaceId FK
+        string userId FK
+        bigint seq "original ACK"
+        string contentHash "normalized event hash"
+        datetime processedAt
+    }
     Alert {
         string id PK
         string workspaceId FK
@@ -206,7 +220,9 @@ erDiagram
     }
     AlertEvidence {
         string alertId PK, FK
-        string eventId PK, FK "references Event.id"
+        string eventId PK "source Event.id, no physical FK"
+        bigint eventSeq "source ordering"
+        json eventSnapshot "sanitized TeamEvent"
     }
 ```
 
@@ -237,13 +253,13 @@ erDiagram
 
 `changeType`은 `added / modified / deleted`, `category`는 `db-schema / dependency / infra / test / api / ui / docs / code`다. 파일은 독립 엔터티로 만들지 않고 변경 당시의 상대경로를 기록한다.
 
-**지연 도착 처리 제안**: `Event.agentRunId`는 실행 등록보다 이벤트가 먼저 도착할 수 있어 물리 FK를 두지 않는다. 알려진 실행이면 워크스페이스와 소유자가 일치하는지 검증한다. 미등록 실행이면 메타데이터 도착 후 검증하고 요약에 반영하며, 검증 전에는 해당 실행의 경고 판단에 사용하지 않는다. 시작을 관측하지 못한 종료 이벤트로 요약을 만들 때는 `startedAt`을 NULL로 둔다. 다른 사용자나 팀의 실행 UUID 재사용은 거부한다.
+**지연 도착 처리(API §10.6)**: `Event.agentRunId`는 실행 등록보다 이벤트가 먼저 도착할 수 있어 물리 FK를 두지 않는다. 알려진 실행이면 워크스페이스와 소유자가 일치하는지 검증한다. 미등록 실행이면 메타데이터 도착 후 검증하고 요약에 반영하며, 검증 전에는 해당 실행의 경고 판단에 사용하지 않는다. 시작을 관측하지 못한 종료 이벤트로 요약을 만들 때는 `startedAt`을 NULL로 둔다. 다른 사용자나 팀의 실행 UUID 재사용은 거부한다.
 
 ### 3.2 수신자별 경고와 근거
 
 `Alert`는 수신자마다 1행을 저장한다. 고유키는 `(workspaceId, recipientId, key)`이므로 같은 원인이라도 수신자가 다르면 별도 경고다. PRD의 `RiskAlert`를 ARCHITECTURE와 API에 맞춰 `Alert`로 명명했다.
 
-`AlertEvidence`는 경고와 이벤트의 N:M 중간 테이블이다. ARCHITECTURE의 이벤트 ID 배열을 관계로 표현하며, API에서는 기존처럼 `evidence: Event.id[]`로 반환한다. 근거 목록은 `Event.seq` 순서로 정렬한다. 생성 시 근거가 최소 1개 있어야 한다는 규칙은 서비스에서 검증한다. 그림의 `o{`는 FK만으로 최소 1행을 강제할 수 없음을 나타낸다.
+`AlertEvidence`는 경고마다 원본 이벤트 ID와 순번, 정제된 이벤트 메타데이터 스냅샷을 보관한다. `eventId`는 논리 참조이며 원본 이벤트가 먼저 삭제될 수 있으므로 물리 FK를 두지 않는다. API는 기존처럼 경고의 `evidence: Event.id[]`와 근거 조회의 `TeamEvent[]`를 반환한다. 근거 목록은 보존한 `eventSeq` 순서로 정렬한다. 생성 시 근거가 최소 1개 있어야 한다는 규칙은 서비스에서 검증한다. 그림의 `o{`는 FK만으로 최소 1행을 강제할 수 없음을 나타낸다.
 
 `myRunId`는 수신자의 실행, `otherRunId`는 상대의 실행이다. `sim` 경고에서는 두 값을 필수로 검증한다. 경고·실행·근거 이벤트가 모두 같은 팀에 속하고, 각 실행 소유자가 해당 사용자와 일치하는지도 검증한다.
 
@@ -255,7 +271,7 @@ erDiagram
 | `actions` | `notify / evidence / restart / peek / dismiss` 중 허용된 작업 배열 |
 | `feedback`, `feedbackNote` | 입력 `useful`, `note`. 미응답 NULL과 부정 평가 false를 구분 |
 
-피드백은 최신 응답을 덮어쓰는 안으로 설계했다. 액션 `dismiss / notified / handled`를 상태로 변환한다. `notify`는 화면에 표시할 작업이고, `notified`는 로컬 에이전트에 전달을 완료한 결과다. 원문 프롬프트와 전달 본문은 서버에 저장하지 않는다.
+피드백은 수신자의 최신 응답을 덮어쓰며 경고 만료 시 삭제한다. P0 유용성 지표는 최근 30일 보관 중인 평가를 집계한다. 액션 `dismiss / notified / handled`를 상태로 변환한다. `notify`는 화면에 표시할 작업이고, `notified`는 로컬 에이전트에 전달을 완료한 결과다. 원문 프롬프트와 전달 본문은 서버에 저장하지 않는다.
 
 ## 4. 로컬 저장 모델
 
@@ -300,12 +316,14 @@ erDiagram
         int enqueueOrder
         json event "sanitized outbound Event"
         datetime queuedAt
+        string deliveryState "queued or held"
+        string holdReason "nullable: expired or clock_uncertain"
     }
 ```
 
 - `personal`은 `remoteId`가 없고, `team`은 서버 Workspace ID를 가진다. 동기화 상태와 송신 큐는 팀에만 존재한다. 같은 팀이라도 기기별 로컬 설정은 다르다.
 - `LocalWorkspaceSettings`는 실제로 `LocalWorkspace.settings`에 포함할 수 있다. 이 경우 그림의 부모 식별용 `localWorkspaceId`는 생략한다.
-- 송신 큐는 계정과 팀에 연결한다. 로그아웃 후 다른 계정으로 재전송하지 않는다. 같은 UUID로 재전송하며 `ack`를 받은 뒤 삭제한다. 수신 커서는 송신 ACK와 별도로, 순서대로 영속화한 수신 이벤트를 기준으로 갱신한다.
+- 송신 큐는 계정과 팀에 연결한다. 로그아웃 후 다른 계정으로 재전송하지 않는다. 큐 최초 저장 시각 `queuedAt`부터 30일 이내에 같은 UUID로 자동 재전송하며 `ack`를 받은 뒤 삭제한다. 만료되거나 시각을 신뢰할 수 없으면 항목을 삭제하지 않고 보류 상태·이유를 저장하고 사용자에게 알린다(API §7.5). 보류 항목의 수동 재전송은 지원하지 않으며 사용자가 확인 후 명시적으로 삭제할 수 있다. 수신 커서는 송신 ACK와 별도로, 순서대로 영속화한 수신 이벤트를 기준으로 갱신한다.
 - 설정의 다운로드와 실제 적용을 구분한다. 승인 및 적용이 완료되면 `appliedConfigVersion`을 갱신한다. 즉시 적용 항목과 승인 대기 항목이 섞여 있으면 `pendingConfig`도 보관한다.
 - `env` 값은 safeStorage로 보호해 저장한다. Cookie와 로그인 세션은 Electron partition에, 터미널 내용·실행 핸들·Hook 토큰은 런타임에 속한다.
 - 멤버 API의 `online`과 WS의 `active / background / sleep / elsewhere / offline`은 연결과 heartbeat에서 계산하는 일시적인 상태다. 멤버 테이블에 영구 저장하지 않는다.
@@ -322,20 +340,21 @@ erDiagram
 | Invite | PK `id`; UNIQUE `code`; INDEX `(workspaceId, expiresAt)` | 코드 조회·팀 초대 목록 |
 | AgentRun | PK `id`; INDEX `(workspaceId, runStatus)`, `(workspaceId, userId)` | 실행 중 목록·소유자별 실행 |
 | Event | PK `seq`; UNIQUE `id`; INDEX `(workspaceId, seq)`, `(workspaceId, agentRunId, seq)` | 중복 제거·재접속 재생·실행별 이력 |
+| EventDeduplication | PK `eventId`; INDEX `processedAt`, `workspaceId` | 최초 처리 후 최소 90일 중복 확인. `seq`는 원본 삭제 후에도 ACK를 반환하는 값 |
 | Alert | PK `id`; UNIQUE `(workspaceId, recipientId, key)`; INDEX `(workspaceId, recipientId, status, createdAt)` | 수신자별 중복 방지·상태별 조회 |
-| AlertEvidence | PK `(alertId, eventId)`; INDEX `eventId` | 근거 중복 방지·역참조. `eventId`는 `Event.id` 참조 |
+| AlertEvidence | PK `(alertId, eventId)`; INDEX `eventId` | 근거 중복 방지·역조회. `eventId`는 원본 ID를 보존하는 논리 참조 |
 
 ## 6. 쓰기 정합성과 삭제 정책
 
 다음은 구현 시 적용할 설계안이다. 단순 FK로 표현할 수 없는 팀 일치와 권한 조건은 서비스에서 검증한다.
 
 1. **설정 갱신**: `baseVersion`을 조건으로 현재 버전을 비교 갱신하고 새 스냅샷과 함께 커밋한다. 경합은 409로 반환하고 알림은 커밋 후 전송한다.
-2. **이벤트 수신**: 토큰에서 userId를 확정하고 현재 멤버십·권한·공개 범위를 검사한다. 같은 UUID 재전송에는 기존 seq를 반환한다. 내용이나 발신자가 다른 UUID 재사용은 거부한다. 중복 수신으로 상태와 경고를 다시 생성하지 않는다.
+2. **이벤트 수신**: 토큰에서 userId를 확정하고 현재 멤버십·권한·공개 범위를 검사한다. 이벤트와 별도로 EventDeduplication에 UUID·팀·사용자·순번·내용 해시·처리 시각을 같은 트랜잭션으로 저장한다. 최초 처리 후 최소 90일 동안 동일 UUID·소유자·내용 재전송에는 원본 이벤트 삭제 후에도 기존 seq를 반환한다. 내용이나 발신자가 다른 UUID 재사용은 거부한다. 로컬 자동 재전송은 최초 큐 저장 후 30일로 제한하며, 기록 만료 이후의 중복 제거와 서버의 기한 검증은 별도 결정이 필요하다. 팀 삭제 시 중복 확인 기록도 삭제한다.
 3. **순번과 재생**: seq는 전역 증가 번호이고 팀 내 결번을 허용한다. 팀으로 필터링하고 `seq > afterSeq ORDER BY seq`로 조회한다. 채번만으로 커밋 순서를 보장할 수 없으므로 같은 팀의 수신 처리를 직렬화한 뒤 채번한다. 그래야 커서가 미커밋된 작은 순번을 건너뛰지 않는다.
 4. **실행 요약과 경고**: 새 이벤트·실행 요약·경고·근거를 원자적으로 저장한다. 클라이언트의 발생 시각 at와 서버 수신 순서는 구분한다. 지연 이벤트가 종료된 실행을 다시 실행 중으로 되돌리지 않도록 전이 규칙을 둔다.
 5. **탈퇴 후 이력**: 작성자·초대자·실행 소유자·경고 당사자는 User를 참조한다. Membership을 이력의 부모 FK로 삼지 않으므로 탈퇴 후에도 근거를 유지한다. 접근 시에는 현재 멤버십을 확인한다.
 6. **경고 접근**: 목록·근거·처리·피드백은 수신자만 접근한다. 원인 사용자에게는 `alert.caused`의 최소 정보만 전달한다.
-7. **삭제**: 팀 삭제 시 근거 연결 → 경고 → 이벤트·실행 → 초대·설정·멤버십 → 팀 순으로 트랜잭션에서 삭제한다. 탈퇴는 멤버십만 삭제한다. 참조 중인 이벤트·실행의 개별 삭제는 RESTRICT로 제한한다. 계정 삭제 API가 없으므로 이력이 남은 사용자 물리 삭제도 RESTRICT로 제한하며, 보존 기간과 계정 삭제 정책은 별도 결정한다.
+7. **삭제**: 팀 삭제 시 근거 연결 → 경고 → 이벤트·실행 → 초대·설정·멤버십 → 팀 순으로 트랜잭션에서 삭제한다. 탈퇴는 멤버십만 삭제한다. 이벤트는 서버 수신 시각 기준 30일, 경고는 생성 시각 기준 30일 보관한다. 원본 이벤트를 삭제해도 경고의 근거 스냅샷은 경고 만료까지 유지하고, 경고가 만료되면 스냅샷과 피드백도 함께 삭제한다. 경고가 참조하는 실행의 개별 삭제는 RESTRICT로 제한한다. 계정 삭제 API가 없으므로 이력이 남은 사용자 물리 삭제도 RESTRICT로 제한하며, 보존 기간과 계정 삭제 정책은 별도 결정한다.
 
 ## 7. 기존 문서 보완과 미결정 사항
 
@@ -345,7 +364,7 @@ erDiagram
 | 인증 세션 | API에 갱신·로그아웃이 있지만 저장 모델 없음 | 기기별 세션, 30일 만료, 회전·계열별 재사용 감지 적용 (API §6.3) |
 | 개발 로그인 | DB 초안의 githubId는 필수, 개발 API는 displayName만 받음 | githubId를 NULL 가능으로 제안. 표시명만으로 기존 계정을 선택하지 않고 개발 계정을 별도 생성 |
 | 응답 필드 | DB 초안에 discordUrl, summary, 경고 title/file/branch/run IDs/actions/note 누락 | 대응 열 추가. 초대 createdAt/acceptedAt, 경고 updatedAt/feedbackAt도 추가 제안 |
-| 경고 근거 | DB 초안은 이벤트 ID 배열 | AlertEvidence로 정규화하고 API 배열 형식은 유지 |
+| 경고 근거 | DB 초안은 이벤트 ID 배열 | AlertEvidence로 정규화하고 API 배열 형식을 유지하며 원본 삭제 후에도 경고 만료까지 스냅샷 보관 |
 | 경고 상태 | 목록 필터는 대문자, 응답은 소문자 | DB와 필터는 대문자, 응답은 소문자로 변환 |
 | seq 표현 | DB는 BigInt, API와 로컬은 10진 문자열 | API §6.1에서 문자열로 확정. 초기 커서는 `"0"` |
 | Hook Stop | API §4.3·§5.3 | Stop은 done, 사용자 확인이 감지되면 idle (API §6.5) |
