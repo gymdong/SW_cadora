@@ -115,7 +115,10 @@ export class WorkspaceManager {
       localPath = resolve(input.localPath);
       if (existsSync(localPath) && !statSync(localPath).isDirectory()) throw new Error('선택한 경로가 폴더가 아니에요.');
     } else {
-      localPath = join(app.getPath('documents'), 'Cadora', safeFolderName(name));
+      // 기본 위치: 문서\Cadora\<이름>. 테스트·시연용으로 CADORA_WORKSPACES_ROOT(절대경로)를 주면 그 아래에 만든다.
+      const override = process.env['CADORA_WORKSPACES_ROOT'];
+      const root = override && isAbsolute(override) ? override : join(app.getPath('documents'), 'Cadora');
+      localPath = join(root, safeFolderName(name));
     }
     if (this.data.workspaces.some((w) => w.localPath.toLowerCase() === localPath.toLowerCase())) {
       throw new Error('이미 다른 워크스페이스가 쓰는 폴더예요.');

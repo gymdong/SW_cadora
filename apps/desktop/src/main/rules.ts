@@ -88,10 +88,9 @@ export function isSecretName(name: string): boolean {
   return /(KEY|SECRET|TOKEN|PASSWORD|PASSWD|DATABASE_URL|PRIVATE)/i.test(name);
 }
 
-export function maskValue(name: string, value: string): string {
-  if (isSecretName(name)) return '••••••••';
-  if (value.length <= 4) return '••••';
-  return value.slice(0, 2) + '••••' + value.slice(-1);
+/** 환경변수 값은 이름과 상관없이 모두 가린다(키를 비밀처럼 보이지 않는 이름으로 저장해도 새지 않게). */
+export function maskValue(_name: string, value: string): string {
+  return value ? '••••••••' : '';
 }
 
 /** 환경변수 이름: 문자·숫자·밑줄, 숫자로 시작하지 않는다. */

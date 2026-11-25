@@ -45,9 +45,9 @@ describe('환경변수 가리기', () => {
     expect(maskValue('OPENAI_API_KEY', 'sk-proj-abcdefghijklmnop')).toBe('••••••••');
     expect(maskValue('DATABASE_URL', 'postgres://a:b@h/db')).toBe('••••••••');
   });
-  it('그 밖의 값도 앞뒤 일부만 보인다', () => {
-    expect(maskValue('NODE_ENV', 'development')).toBe('de••••t');
-    expect(maskValue('PORT', '3000')).toBe('••••');
+  it('비밀처럼 보이지 않는 이름이어도 값을 전혀 보이지 않는다', () => {
+    expect(maskValue('CLAUDE_AUTH', 'sk-ant-abcdef')).toBe('••••••••');
+    expect(maskValue('NODE_ENV', 'development')).toBe('••••••••');
   });
   it('이름 형식을 검사한다', () => {
     expect(isValidEnvName('OPENAI_API_KEY')).toBe(true);
