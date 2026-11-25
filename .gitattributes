@@ -1,0 +1,13 @@
+# 저장소에는 LF로 저장하고 작업 폴더도 LF로 꺼낸다. Windows·WSL·macOS가 섞여도 줄바꿈 차이가 diff나 스크립트를 깨지 않게 한다.
+* text=auto eol=lf
+
+# Windows 배치 파일은 CRLF여야 실행된다
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 바이너리
+*.png binary
+*.jpg binary
+*.ico binary
+*.icns binary
+*.woff2 binary

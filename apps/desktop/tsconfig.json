@@ -1,0 +1,8 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // main·preload는 Electron(Node 24 기반)에서 돈다. 앱 화면은 src/renderer/tsconfig.json이 따로 맡는다.
+    "types": ["node"]
+  },
+  "include": ["src/main", "src/preload", "src/shared", "electron.vite.config.ts"]
+}
