@@ -847,7 +847,13 @@
       const n = document.getElementById('real-env-name'), v = document.getElementById('real-env-value');
       const name = n ? n.value.trim() : '', value = v ? v.value : '';
       if (!name || !value) { toast('이름과 값을 모두 넣어 주세요'); return; }
-      R.setEnv(realSel, name, value).then(w => { if (w) { if (n) n.value = ''; if (v) v.value = ''; toast(`${esc(name)} 저장 — 값은 암호화해 두고 화면에는 가려서 보여요`); } });
+      if (v) v.value = '';   // 비밀값은 화면에 남기지 않는다(저장 중에 다시 그려져도 복원되지 않게 먼저 비운다)
+      R.setEnv(realSel, name, value).then(w => {
+        // 저장하는 사이 화면이 다시 그려졌을 수 있으니 지금 있는 입력칸을 id로 다시 찾는다.
+        const nn = document.getElementById('real-env-name'), vv = document.getElementById('real-env-value');
+        if (vv) vv.value = '';
+        if (w) { if (nn) nn.value = ''; toast(`${esc(name)} 저장 — 값은 암호화해 두고 화면에는 가려서 보여요`); }
+      });
     },
     'real-env-del': d => { R.removeEnv(realSel, d.name); },
   } : {};
