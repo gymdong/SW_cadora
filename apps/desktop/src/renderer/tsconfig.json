@@ -1,0 +1,10 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    // 앱 화면(renderer)은 브라우저 환경이다. Node 타입을 넣지 않아서 process·require·node:fs를 쓰면 typecheck가 실패한다.
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "types": ["vite/client"]
+  },
+  "include": [".", "../shared"]
+}

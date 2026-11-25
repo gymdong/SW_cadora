@@ -1,0 +1,28 @@
+{
+  "name": "@cadora/desktop",
+  "productName": "Cadora",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Cadora 데스크톱 앱",
+  "author": "Cadora Team",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "install-electron && electron-vite dev",
+    "build": "electron-vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p src/renderer/tsconfig.json --noEmit",
+    "test": "vitest run",
+    "dist": "electron-vite build && electron-builder --publish never"
+  },
+  "devDependencies": {
+    "@cadora/protocol": "*",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.3.0",
+    "electron": "45.4.1",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "vite": "^8.3.8"
+  }
+}

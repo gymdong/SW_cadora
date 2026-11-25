@@ -1,0 +1,14 @@
+{
+  "name": "@cadora/core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "분류 · 정제 · 마스킹 · 유사도 · 경고 규칙 (prototype/sim.js 이식, #22)",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  }
+}
