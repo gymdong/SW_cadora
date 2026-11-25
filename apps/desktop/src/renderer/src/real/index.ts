@@ -207,13 +207,19 @@ if (api && hasFullApi) {
     if (toastFn) toastFn(`받은 파일을 이 워크스페이스 폴더에 저장했어요 — ${d.fileName}`);
     changed();
   });
-  void Promise.all([api.runtime.info(), api.workspace.list()])
-    .then(([info, list]) => {
+  // 첫 정보 읽기. main이 준비되기 전이면 잠깐 뒤에 다시 시도한다.
+  const init = async (attempt: number): Promise<void> => {
+    try {
+      const [info, list] = await Promise.all([api.runtime.info(), api.workspace.list()]);
       state.info = info;
       state.workspaces = list;
       changed();
-    })
-    .catch(report);
+    } catch (err) {
+      if (attempt < 5) setTimeout(() => void init(attempt + 1), 300 * (attempt + 1));
+      else report(err);
+    }
+  };
+  void init(0);
 }
 
 // ───────────── 배치(layout) ─────────────
@@ -351,7 +357,11 @@ const real = {
   async startAgent(wsId: string, taskTitle: string) {
     if (!api) return;
     const run = await guard(api.agents.start(wsId, { tool: 'claude', taskTitle }));
-    if (run) state.activeTerm[wsId] = run.termId;
+    if (run) {
+      state.activeTerm[wsId] = run.termId;
+      const list = (state.agents[wsId] ??= []);
+      if (!list.some((r) => r.runId === run.runId)) list.push(run);
+    }
     changed();
   },
   stopAgent: (runId: string) => api && guard(api.agents.stop(runId)),

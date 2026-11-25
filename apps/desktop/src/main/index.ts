@@ -55,13 +55,16 @@ function createMainWindow(): BrowserWindow {
     if (isExternalHttpUrl(event.url)) void shell.openExternal(event.url);
   });
 
+  return win;
+}
+
+/** IPC를 모두 등록한 뒤에 화면을 불러온다(먼저 불러오면 첫 호출이 "No handler registered"로 실패한다). */
+function loadApp(win: BrowserWindow): void {
   if (devServerUrl) {
     void win.loadURL(devServerUrl);
   } else {
     void win.loadFile(join(__dirname, '../renderer/index.html'));
   }
-
-  return win;
 }
 
 // 어떤 화면도 <webview>를 붙이지 못하게 한다.
@@ -104,6 +107,7 @@ void app.whenReady().then(async () => {
     profileRoot: join(app.getPath('userData'), 'browser-profiles'),
     isAppUrl: (url) => isAppSenderUrl(url, devServerUrl, rendererFileUrl),
   });
+  loadApp(win);
 
   cleanup = async () => {
     browser.flush();
