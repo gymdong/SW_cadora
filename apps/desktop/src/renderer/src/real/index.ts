@@ -10,17 +10,30 @@ import { FitAddon } from '@xterm/addon-fit';
 import { Terminal } from '@xterm/xterm';
 import type {
   AgentRunInfo,
+  AuthStatus,
   CadoraBridge,
   CreateWorkspaceInput,
   DownloadDone,
   FileChange,
   LocalWorkspaceView,
+  LoginStart,
+  Me,
   RuntimeInfo,
   TabInfo,
   TerminalInfo,
 } from '../../../shared/bridge';
 
+/** Cadora 계정 화면 상태. checking: 시작 직후 확인 중, offline: 저장된 로그인이 있는데 서버에 닿지 못함. */
+export interface AuthView {
+  status: AuthStatus | 'checking' | 'offline';
+  me: Me | null;
+  pending: LoginStart | null;
+  message: string | null;
+  busy: boolean;
+}
+
 export interface RealState {
+  auth: AuthView;
   available: boolean;
   info: RuntimeInfo | null;
   workspaces: LocalWorkspaceView[];
@@ -39,6 +52,7 @@ const api: CadoraBridge | undefined = (window as unknown as { cadora?: CadoraBri
 const hasFullApi = !!api && typeof api.workspace === 'object';
 
 const state: RealState = {
+  auth: { status: 'checking', me: null, pending: null, message: null, busy: false },
   available: hasFullApi,
   info: null,
   workspaces: [],
@@ -142,6 +156,30 @@ function disposeXterm(termId: string): void {
   xterms.delete(termId);
 }
 
+// ───────────── Cadora 계정 ─────────────
+const errText = (err: unknown) => (err instanceof Error ? err.message : String(err));
+
+/** main에 내 정보를 묻는다. 저장된 로그인이 있는데 서버에 닿지 못하면 offline으로 둔다. */
+async function refreshMe(): Promise<void> {
+  if (!api) return;
+  const A = state.auth;
+  try {
+    const me = await api.team.me();
+    A.me = me;
+    if (me) {
+      A.status = 'authenticated';
+      A.message = null;
+    } else if (A.status === 'checking' || A.status === 'offline' || A.status === 'authenticated') {
+      A.status = 'logged_out';
+    }
+  } catch (err) {
+    A.me = null;
+    A.status = 'offline';
+    A.message = errText(err);
+  }
+  changed();
+}
+
 // ───────────── 초기화와 이벤트 ─────────────
 async function loadWorkspace(wsId: string): Promise<void> {
   if (!api) return;
@@ -207,6 +245,15 @@ if (api && hasFullApi) {
     if (toastFn) toastFn(`받은 파일을 이 워크스페이스 폴더에 저장했어요 — ${d.fileName}`);
     changed();
   });
+  api.on('team:authChanged', ({ status, message }) => {
+    const A = state.auth;
+    A.status = status;
+    A.message = message ?? null;
+    if (status !== 'pending') A.pending = null;
+    if (status === 'authenticated') void refreshMe();
+    else if (status !== 'pending') A.me = null;
+    changed();
+  });
   // 첫 정보 읽기. main이 준비되기 전이면 잠깐 뒤에 다시 시도한다.
   const init = async (attempt: number): Promise<void> => {
     try {
@@ -214,6 +261,7 @@ if (api && hasFullApi) {
       state.info = info;
       state.workspaces = list;
       changed();
+      void refreshMe();
     } catch (err) {
       if (attempt < 5) setTimeout(() => void init(attempt + 1), 300 * (attempt + 1));
       else report(err);
@@ -375,6 +423,41 @@ const real = {
     changed();
   },
   stopAgent: (runId: string) => api && guard(api.agents.stop(runId)),
+
+  // Cadora 계정(GitHub Device Flow). 화면은 코드·주소·내 정보만 받는다.
+  async login() {
+    if (!api) return;
+    const A = state.auth;
+    A.busy = true;
+    A.message = null;
+    A.pending = null;
+    changed();
+    try {
+      A.pending = await api.team.login();
+      A.status = 'pending';
+    } catch (err) {
+      A.message = errText(err);
+      A.status = A.me ? 'authenticated' : 'logged_out';
+    } finally {
+      A.busy = false;
+      changed();
+    }
+  },
+  async openLoginPage() {
+    if (!api) return;
+    const code = state.auth.pending?.userCode;
+    if (code) await navigator.clipboard.writeText(code).catch(() => undefined);
+    await guard(api.team.openVerification());
+  },
+  cancelLogin: () => api && guard(api.team.cancelLogin()),
+  async logoutAccount() {
+    if (!api) return;
+    await guard(api.team.logout());
+    state.auth.me = null;
+    state.auth.status = 'logged_out';
+    changed();
+  },
+  retryAccount: () => refreshMe(),
 };
 
 (window as unknown as { CadoraReal: typeof real }).CadoraReal = real;

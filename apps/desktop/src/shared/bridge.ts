@@ -2,8 +2,9 @@
  * preload가 renderer에 여는 `window.cadora`의 타입(API.md §3의 부분 집합).
  * renderer는 Node·파일 시스템에 직접 접근하지 않고 이 객체만 쓴다.
  *
- * 로컬 데모 브랜치(demo/local-prototype)용이다. 정식 계약은 packages/protocol의 IPC 계약(#23)으로 옮긴다.
- * 팀 기능(team·alerts)은 서버(#30~#38)가 생긴 뒤에 채운다. 그 전까지 화면은 프로토타입 시뮬레이션을 쓴다.
+ * 로컬 데모 브랜치(demo/local-prototype)용이다. 정식 계약은 packages/protocol의 IPC 계약(#46, 예전 #23)으로 옮긴다.
+ * team은 로그인(§1.1)만 실제 서버에 붙는다. 서버가 생기기 전에는 apps/desktop/dev/auth-server.mjs(로컬 임시 서버)를 쓴다.
+ * 나머지 팀 기능은 서버가 생긴 뒤에 채우고, 그 전까지 화면은 프로토타입 시뮬레이션을 쓴다.
  */
 
 export type WorkspaceType = '과제' | '팀 프로젝트' | '개인 프로젝트' | '기타';
@@ -104,9 +105,31 @@ export interface RuntimeInfo {
   watcher: '@parcel/watcher';
   /** 비밀값 저장소(safeStorage)를 쓸 수 있는지(Windows는 DPAPI). */
   secretStore: boolean;
+  /** 로그인에 쓰는 Cadora 서버 주소(CADORA_SERVER_URL, 기본 http://localhost:4000/v1). 올바르지 않으면 null. */
+  authServer: string | null;
+}
+
+/** 로그인 상태(API.md §3 "team:authChanged"). */
+export type AuthStatus = 'pending' | 'authenticated' | 'expired' | 'denied' | 'logged_out';
+export type Role = 'LEADER' | 'MEMBER' | 'VIEWER';
+
+/** 내 정보(API.md §6.1 Me). 토큰은 담지 않는다. avatarUrl은 GitHub 아바타 주소만 남긴다. */
+export interface Me {
+  id: string;
+  displayName: string;
+  avatarUrl: string | null;
+  workspaces: Array<{ id: string; name: string; role: Role }>;
+}
+
+/** 로그인 시작 결과. 화면에는 사용자가 입력할 코드와 GitHub 주소만 준다(deviceCode는 main에만 있다). */
+export interface LoginStart {
+  userCode: string;
+  verificationUri: string;
+  expiresAt: string;
 }
 
 export interface CadoraEvents {
+  'team:authChanged': { status: AuthStatus; message?: string };
   'workspace:changed': LocalWorkspaceView[];
   'browser:tabs': { wsId: string; tabs: TabInfo[]; activeTabId: string | null };
   'download:done': DownloadDone;
@@ -177,6 +200,18 @@ export interface CadoraBridge {
 
   readonly files: {
     recent(wsId: string): Promise<FileChange[]>;
+  };
+
+  /** Cadora 계정(API.md §3 team 중 로그인 부분). 토큰·기기 코드는 main에만 있고 화면으로 오지 않는다. */
+  readonly team: {
+    /** GitHub Device Flow를 시작한다. 승인 결과는 "team:authChanged"로 온다. */
+    login(): Promise<LoginStart>;
+    cancelLogin(): Promise<void>;
+    /** 진행 중인 로그인의 GitHub 페이지(https://github.com만)를 기본 브라우저로 연다. */
+    openVerification(): Promise<void>;
+    /** 로그인되어 있으면 내 정보, 아니면 null. 저장된 로그인이 있는데 서버에 닿지 못하면 오류. */
+    me(): Promise<Me | null>;
+    logout(): Promise<void>;
   };
 
   on<E extends CadoraEventName>(event: E, cb: (payload: CadoraEvents[E]) => void): () => void;

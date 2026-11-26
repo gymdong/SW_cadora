@@ -2,8 +2,10 @@ import { app, BrowserWindow, session, shell } from 'electron';
 import { isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AgentManager } from './agents';
+import { AuthService, parseServerUrl } from './auth';
+import { authStore } from './auth-store';
 import { BrowserManager } from './browser';
-import { setEventTarget } from './events';
+import { emit, setEventTarget } from './events';
 import { HookReceiver } from './hooks';
 import { registerIpc } from './ipc';
 import { isAllowedAppNavigation, isAppSenderUrl, isExternalHttpUrl } from './security';
@@ -98,6 +100,17 @@ void app.whenReady().then(async () => {
   await agents.detect();
   for (const w of workspaces.all()) void watcher.watch(w.id, w.localPath, w.downloadDir).catch(() => undefined);
 
+  // Cadora 계정: CADORA_SERVER_URL(기본 http://localhost:4000/v1)의 GitHub Device Flow. refresh token은 safeStorage로 암호화해 둔다.
+  const store = authStore(join(app.getPath('userData'), 'auth.json'));
+  const auth = new AuthService({
+    serverUrl: parseServerUrl(process.env['CADORA_SERVER_URL']),
+    loadRefreshToken: () => store.load(),
+    saveRefreshToken: (token) => store.save(token),
+    openExternal: (url) => shell.openExternal(url),
+    onStatus: (status, message) => emit('team:authChanged', message ? { status, message } : { status }),
+  });
+  void auth.init();
+
   registerIpc({
     win,
     workspaces,
@@ -105,12 +118,14 @@ void app.whenReady().then(async () => {
     terminals,
     agents,
     watcher,
+    auth,
     profileRoot: join(app.getPath('userData'), 'browser-profiles'),
     isAppUrl: (url) => isAppSenderUrl(url, devServerUrl, rendererFileUrl),
   });
   loadApp(win);
 
   cleanup = async () => {
+    auth.dispose();
     browser.flush();
     await terminals.disposeAll();
     await watcher.disposeAll();

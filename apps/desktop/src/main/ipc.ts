@@ -6,6 +6,7 @@
 import { dialog, ipcMain, shell, type BrowserWindow, type IpcMainEvent, type IpcMainInvokeEvent } from 'electron';
 import { z } from 'zod';
 import type { AgentManager } from './agents';
+import type { AuthService } from './auth';
 import type { BrowserManager } from './browser';
 import { secretStoreAvailable } from './secrets';
 import type { TerminalManager } from './terminals';
@@ -37,6 +38,7 @@ export interface Services {
   terminals: TerminalManager;
   agents: AgentManager;
   watcher: ProjectWatcher;
+  auth: AuthService;
   profileRoot: string;
   isAppUrl: (url: string) => boolean;
 }
@@ -80,7 +82,15 @@ export function registerIpc(s: Services): void {
     hookRunner: s.agents.hookRunner,
     watcher: '@parcel/watcher',
     secretStore: await secretStoreAvailable(),
+    authServer: s.auth.server,
   }));
+
+  // Cadora 계정(API.md §1.1·§3). 토큰·기기 코드는 돌려주지 않는다.
+  handle('team:login', z.tuple([]), () => s.auth.login());
+  handle('team:cancelLogin', z.tuple([]), () => s.auth.cancelLogin());
+  handle('team:openVerification', z.tuple([]), () => s.auth.openVerification());
+  handle('team:me', z.tuple([]), () => s.auth.me());
+  handle('team:logout', z.tuple([]), () => s.auth.logout());
 
   // 워크스페이스
   handle('workspace:list', z.tuple([]), () => s.workspaces.list());

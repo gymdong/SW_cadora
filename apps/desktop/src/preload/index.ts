@@ -14,6 +14,7 @@ const EVENTS: readonly CadoraEventName[] = [
   'terminal:list',
   'agent:status',
   'file:changed',
+  'team:authChanged',
 ];
 
 const call = <T>(channel: string, ...args: unknown[]) =>
@@ -71,6 +72,13 @@ const bridge: CadoraBridge = {
   },
   files: {
     recent: (wsId) => call('files:recent', wsId),
+  },
+  team: {
+    login: () => call('team:login'),
+    cancelLogin: () => call('team:cancelLogin'),
+    openVerification: () => call('team:openVerification'),
+    me: () => call('team:me'),
+    logout: () => call('team:logout'),
   },
   on: (event, cb) => {
     if (!EVENTS.includes(event)) throw new Error('알 수 없는 이벤트예요.');

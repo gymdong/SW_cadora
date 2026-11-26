@@ -680,11 +680,31 @@
     if (runs) parts.push(`에이전트 ${runs}`);
     return parts.join(' · ');
   }
+  // Cadora 계정: 실제 서버(CADORA_SERVER_URL)의 GitHub Device Flow. 토큰은 화면에 오지 않고 main에만 있다.
+  function realAccountHTML() {
+    const A = R.state.auth;
+    const head = '<div class="s-sec">Cadora 계정<span class="rtag real">실제</span></div>';
+    if (A.status === 'authenticated' && A.me) {
+      const me = A.me;
+      const av = me.avatarUrl ? `<img src="${esc(me.avatarUrl)}" alt="" referrerpolicy="no-referrer">` : esc([...String(me.displayName || '?')][0] || '?');
+      return `${head}<div class="racct" data-real-account="in"><span class="racct-av">${av}</span>
+        <span class="grow"><span class="nm">${esc(me.displayName)}</span><span class="mt">GitHub로 로그인됨</span></span>
+        <button class="btn sm" data-act="real-account-logout">로그아웃</button></div>`;
+    }
+    if (A.status === 'checking' || A.status === 'authenticated') return `${head}<div class="racct"><span class="mt">계정 확인 중…</span></div>`;
+    if (A.status === 'offline') {
+      return `${head}<div class="racct col" data-real-account="offline"><span class="mt">${esc(A.message || 'Cadora 서버에 연결할 수 없어요.')}</span>
+        <button class="btn sm" data-act="real-account-retry">다시 시도</button></div>`;
+    }
+    const note = A.message && !(ui.modal && ui.modal.type === 'real-login') ? `<div class="rnote racct-note">${esc(A.message)}</div>` : '';
+    return `${head}<button class="s-add racct-login" data-act="real-login" ${A.busy ? 'disabled' : ''}>${ico('lock', 15)}GitHub로 로그인</button>${note}`;
+  }
+
   function realSideHTML() {
     const items = R.state.workspaces.map(w => `<button class="s-item tall ${realSel === w.id ? 'on' : ''}" data-act="real-ws" data-id="${esc(w.id)}">
         <span class="wsq" style="background:${realColor(w)}">${esc(realShort(w))}</span>
         <span class="grow"><span class="nm">${esc(w.name)}</span><span class="mt"><i style="background:${statusDot(realStatus(w))}"></i>${esc(realMeta(w))}</span></span></button>`).join('');
-    return `<div class="s-sec">이 PC<span class="rtag real">실제</span></div>${items || '<div class="rnote" style="padding:2px 18px 6px;color:var(--side-mute)">아직 없어요. 만들면 폴더 · 브라우저 세션 · 터미널이 따로 생겨요.</div>'}
+    return `${realAccountHTML()}<div class="s-sec">이 PC<span class="rtag real">실제</span></div>${items || '<div class="rnote" style="padding:2px 18px 6px;color:var(--side-mute)">아직 없어요. 만들면 폴더 · 브라우저 세션 · 터미널이 따로 생겨요.</div>'}
       <button class="s-add" data-act="real-create-open">${ico('plus', 15)}새 워크스페이스</button>`;
   }
   const fmtClock = iso => { const d = new Date(iso); return `${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`; };
@@ -783,6 +803,26 @@
         ${m.err ? `<div class="merr">${esc(m.err)}</div>` : ''}
         <div class="mrow"><button class="btn" data-act="modal-close">취소</button><button class="btn primary" data-act="real-agent-start">실행</button></div>`;
     }
+    if (m.type === 'real-login') {
+      const A = R.state.auth;
+      const p = A.pending;
+      const srv = (R.state.info && R.state.info.authServer) || '설정 오류(CADORA_SERVER_URL)';
+      const h = '<h2>GitHub로 로그인 <span class="rtag real">실제</span></h2>';
+      if (!p && (A.busy || A.status === 'pending')) {
+        return `${h}<div class="sub">GitHub 로그인 코드를 받는 중이에요…</div><div class="rnote">서버 ${esc(srv)}</div>
+          <div class="mrow"><button class="btn" data-act="real-login-cancel">취소</button></div>`;
+      }
+      if (!p) {
+        return `${h}<div class="merr" data-real-login-error>${esc(A.message || '로그인하지 못했어요.')}</div><div class="rnote" style="margin-top:8px">서버 ${esc(srv)}</div>
+          <div class="mrow"><button class="btn" data-act="modal-close">닫기</button><button class="btn primary" data-act="real-login-retry">다시 시도</button></div>`;
+      }
+      const mins = Math.max(1, Math.round((new Date(p.expiresAt).getTime() - Date.now()) / 60000));
+      return `${h}<div class="sub">GitHub 페이지에 아래 코드를 넣고 승인하면 이 앱이 자동으로 로그인돼요. 코드는 ${mins}분 동안 쓸 수 있어요.</div>
+        <div class="rcode" data-real-code>${esc(p.userCode)}</div>
+        <div class="rnote"><span class="ld-dot"></span>GitHub 승인을 기다리는 중 · 서버 ${esc(srv)}</div>
+        <div class="rnote">Cadora는 GitHub 공개 프로필(이름 · 아바타)만 읽어요. 저장소 권한은 요청하지 않아요.</div>
+        <div class="mrow"><button class="btn" data-act="real-login-cancel">취소</button><button class="btn primary" data-act="real-login-open">코드 복사하고 GitHub 열기</button></div>`;
+    }
     if (m.type === 'real-remove') {
       const w = realWs(m.id);
       return `<h2>워크스페이스 삭제</h2>
@@ -843,6 +883,12 @@
       R.startAgent(realSel, title).then(() => later(80, () => R.focusTerminal(realSel)));
     },
     'real-agent-stop': d => { R.stopAgent(d.id); },
+    'real-login': () => { ui.menu = null; ui.modal = { type: 'real-login' }; R.login(); },
+    'real-login-retry': () => { R.login(); },
+    'real-login-open': () => { R.openLoginPage().then(() => toast('코드를 복사했어요 — 열린 GitHub 페이지에 붙여 넣으세요')); },
+    'real-login-cancel': () => { ui.modal = null; R.cancelLogin(); },
+    'real-account-logout': () => { R.logoutAccount().then(() => toast('로그아웃했어요 — 이 PC에 저장된 로그인 정보도 지웠어요')); },
+    'real-account-retry': () => { R.retryAccount(); },
     'real-env-add': () => {
       const n = document.getElementById('real-env-name'), v = document.getElementById('real-env-value');
       const name = n ? n.value.trim() : '', value = v ? v.value : '';
@@ -1867,7 +1913,15 @@ docker compose pull</pre><div class="btns"><button class="btn primary" data-act=
     if (m[2]) for (let i = 1; i <= Math.min(+m[2], STEPS.length); i++) doStep(i, true);
   }
   if (R) {
-    R.onChange(() => render());
+    R.onChange(() => {
+      // 로그인 창이 열린 채로 승인되면 창을 닫고 알린다.
+      const A = R.state.auth;
+      if (ui.modal && ui.modal.type === 'real-login' && A.status === 'authenticated' && A.me) {
+        ui.modal = null;
+        toast(`GitHub 계정 <b>${esc(A.me.displayName)}</b>(으)로 로그인했어요`);
+      }
+      render();
+    });
     R.setToast(msg => toast(esc(msg)));
   }
   render();
