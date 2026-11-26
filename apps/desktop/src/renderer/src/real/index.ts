@@ -120,8 +120,8 @@ function xtermFor(termId: string): XT {
   if (x) return x;
   const term = new Terminal({
     fontFamily: 'Consolas, "Cascadia Mono", D2Coding, ui-monospace, monospace',
-    fontSize: 13,
-    lineHeight: 1.15,
+    fontSize: 14,
+    lineHeight: 1.2,
     cursorBlink: true,
     scrollback: 5000,
     theme: { background: '#14171b', foreground: '#d0d6de', cursor: '#2dd4bf', selectionBackground: '#2dd4bf55' },

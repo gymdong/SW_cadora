@@ -762,7 +762,7 @@
   function realShellHTML(side, pane) {
     const me = realMe();
     const nav = REAL_VIEWS.map(([id, label, icon]) => `<button class="nav ${ui.view === id ? 'on' : ''}" data-act="real-view" data-v="${id}"><span class="ic">${ico(icon)}</span>${label}</button>`).join('');
-    return `<div class="win" data-real-page="app">
+    return `<div class="win" data-real-shell>
       <header class="top"><span class="brand">CADORA</span><div></div>
         <div class="top-r">${me ? `<span class="top-user">${esc(me.displayName)}</span>` : '<button class="btn sm" data-act="real-login-from-app">로그인</button>'}</div></header>
       <div class="body"><nav class="rail">${nav}
@@ -912,7 +912,7 @@
         <div class="sub">폴더 · 브라우저 세션 · 다운로드 폴더 · 터미널이 이 워크스페이스 전용으로 생겨요. 이 PC에만 저장돼요.</div>
         <div class="mlabel">이름</div><div class="field-row"><input id="r-name" data-input="r-name" data-norestore data-enter="real-create-submit" value="${esc(m.name || '')}" placeholder="예: 알고리즘 과제 2" autocomplete="off"></div>
         <div class="mlabel">종류</div><div class="seg">${REAL_TYPES.map(t => `<button class="${m.wtype === t ? 'on' : ''}" data-act="real-create-type" data-t="${t}">${t}</button>`).join('')}</div>
-        <div class="mlabel">폴더</div><div class="field-row"><code class="grow ellip" style="font-size:12.5px">${m.folder ? esc(m.folder) : '기본 위치: 문서\\Cadora\\(이름)'}</code><button class="btn sm" data-act="real-create-pick">폴더 선택…</button>${m.folder ? '<button class="btn sm" data-act="real-create-default">기본 위치</button>' : ''}</div>
+        <div class="mlabel">폴더</div><div class="field-row"><code class="grow ellip" style="font-size:14px">${m.folder ? esc(m.folder) : '기본 위치: 문서\\Cadora\\(이름)'}</code><button class="btn sm" data-act="real-create-pick">폴더 선택…</button>${m.folder ? '<button class="btn sm" data-act="real-create-default">기본 위치</button>' : ''}</div>
         ${m.err ? `<div class="merr">${esc(m.err)}</div>` : ''}
         <div class="mrow"><button class="btn" data-act="modal-close">취소</button><button class="btn primary" data-act="real-create-submit" ${m.busy ? 'disabled' : ''}>만들기</button></div>`;
     }
@@ -1644,7 +1644,7 @@
       const items = myWs().map(w => {
         const m = wsMeta(ui.viewer, w);
         return `<button class="menu-item ${curId() === w.id ? 'on' : ''}" data-act="ws" data-id="${w.id}"><span class="av" style="background:${w.color}">${esc(w.short)}</span>
-          <span class="grow"><b>${esc(w.name)}</b><br><span style="font-size:12px;color:var(--text-3)">${esc(m.text)}</span></span></button>`;
+          <span class="grow"><b>${esc(w.name)}</b><br><span style="font-size:13px;color:var(--text-3)">${esc(m.text)}</span></span></button>`;
       }).join('');
       return `<div class="menu" style="left:72px;top:50px"><h4>${esc(U[ui.viewer].name)}의 워크스페이스</h4>${items}<div class="sep"></div>
         <button class="menu-item" data-act="create-open"><span class="av" style="background:#e9ecef;color:#495057">${ico('plus', 15)}</span><b>새 워크스페이스</b></button></div>`;
