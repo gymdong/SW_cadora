@@ -63,6 +63,8 @@ const Str = (max: number) => z.string().min(1).max(max);
 const UserSchema = z.object({ id: Str(128), displayName: z.string().max(200), avatarUrl: z.string().max(2048).nullable() });
 const MeSchema = UserSchema.extend({
   workspaces: z.array(z.object({ id: Str(128), name: z.string().max(200), role: z.enum(['LEADER', 'MEMBER', 'VIEWER']) })).max(500),
+  /** 데모 확장: 첫 로그인 뒤 가입 마무리(이름 확인·공유 범위 동의)가 남았는지. 없으면 false로 본다. */
+  needsSignup: z.boolean().optional(),
 });
 const DeviceSchema = z.object({
   deviceCode: Str(1024),
@@ -72,7 +74,7 @@ const DeviceSchema = z.object({
   expiresIn: z.number().int().min(1).max(7200),
 });
 const TokensSchema = z.object({ accessToken: Str(8192), refreshToken: Str(8192) });
-const LoginDoneSchema = TokensSchema.extend({ user: UserSchema });
+const LoginDoneSchema = TokensSchema.extend({ user: UserSchema, needsSignup: z.boolean().optional() });
 const ErrorSchema = z.object({
   error: z.object({ code: z.string().max(100), message: z.string().max(500).optional(), details: z.record(z.string(), z.unknown()).optional() }),
 });
@@ -90,13 +92,12 @@ function errorOf(data: unknown): { code?: string; message?: string; details?: Re
 /** 요청이 서버에 닿지 않은 연결 오류(이때는 refresh token이 그대로 유효하다). */
 const NOT_SENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
 
-export type ServerState = 'configured' | 'not_configured' | 'invalid';
+/** remote: 팀 서버. local: 앱 안 임시 서버. invalid: 서버 주소 설정 오류. needs_client_id: 임시 서버에 쓸 GitHub Client ID가 없음. */
+export type ServerState = 'remote' | 'local' | 'invalid' | 'needs_client_id';
 
 export interface AuthDeps {
-  /** parseServerUrl 결과. null이면 로그인하지 않고 serverState에 맞는 안내를 낸다. */
-  serverUrl: string | null;
-  /** not_configured: 설치판에 팀 서버 주소가 아직 없음. invalid: 주소가 https·loopback 규칙에 맞지 않음. */
-  serverState?: ServerState;
+  /** 지금 쓸 서버. 앱 안 임시 서버는 Client ID를 넣은 뒤에 생기므로 매번 묻는다. */
+  server(): { url: string | null; state: ServerState };
   loadRefreshToken(): Promise<string | null>;
   /** null이면 지운다. 암호화를 쓸 수 없으면 throw한다(그러면 앱이 켜져 있는 동안만 로그인이 유지된다). */
   saveRefreshToken(token: string | null): Promise<void>;
@@ -135,7 +136,7 @@ export class AuthService {
   }
 
   get server(): string | null {
-    return this.deps.serverUrl;
+    return this.deps.server().url;
   }
 
   /** 앱 시작 때: 저장된 refresh token이 있으면 세션을 되살린다. 서버가 꺼져 있으면 토큰은 두고 다음 me()에서 다시 시도한다. */
@@ -206,7 +207,7 @@ export class AuthService {
   /** 서버에 refresh token 폐기를 요청하고(§7.1), 서버에 닿지 못해도 이 PC의 로그인 정보는 지운다. */
   async logout(): Promise<void> {
     this.cancelLogin(false);
-    const base = this.deps.serverUrl;
+    const base = this.deps.server().url;
     this.quiet = true;
     try {
       if (base && this.refreshToken) {
@@ -225,6 +226,22 @@ export class AuthService {
     }
     await this.clearLocal();
     this.setStatus('logged_out');
+  }
+
+  /** 가입 마무리(데모 확장 PATCH /me): 팀에 보일 이름을 정하면 needsSignup이 풀린다. */
+  async updateProfile(displayName: string): Promise<Me> {
+    const base = this.requireServer();
+    if (this.statusValue !== 'authenticated' || (!this.access && (await this.refresh()) !== 'ok')) throw new AuthError('unauthenticated', '로그인이 필요해요.');
+    let r = await this.call(base, 'PATCH', '/me', { displayName }, this.access ?? undefined);
+    if (r.status === 401) {
+      if ((await this.refresh()) !== 'ok') throw new AuthError('unauthenticated', '로그인이 만료됐어요. 다시 로그인해 주세요.');
+      r = await this.call(base, 'PATCH', '/me', { displayName }, this.access ?? undefined);
+    }
+    if (r.status !== 200) throw this.replyError(r, '가입 정보를 저장하지 못했어요.');
+    const m = MeSchema.safeParse(r.data);
+    if (!m.success) throw new AuthError('invalid_response', '서버 응답 형식이 올바르지 않아요.');
+    this.meValue = { ...this.toUser(m.data), workspaces: m.data.workspaces, needsSignup: m.data.needsSignup === true };
+    return this.meValue;
   }
 
   dispose(): void {
@@ -253,7 +270,7 @@ export class AuthService {
         if (!done.success) return this.endLogin(gen, 'logged_out', '서버 응답 형식이 API 계약(§7.1)과 달라요.');
         this.access = done.data.accessToken;
         this.refreshToken = done.data.refreshToken;
-        this.meValue = { ...this.toUser(done.data.user), workspaces: [] };
+        this.meValue = { ...this.toUser(done.data.user), workspaces: [], needsSignup: done.data.needsSignup === true };
         await this.persist(done.data.refreshToken);
         try {
           await this.loadMe();
@@ -349,11 +366,11 @@ export class AuthService {
     if (r.status !== 200) throw this.replyError(r, '내 정보를 받지 못했어요.');
     const m = MeSchema.safeParse(r.data);
     if (!m.success) throw new AuthError('invalid_response', '서버 응답 형식이 API 계약(§1.2)과 달라요.');
-    this.meValue = { ...this.toUser(m.data), workspaces: m.data.workspaces };
+    this.meValue = { ...this.toUser(m.data), workspaces: m.data.workspaces, needsSignup: m.data.needsSignup === true };
     if (this.statusValue !== 'pending') this.setStatus('authenticated');
   }
 
-  private toUser(u: { id: string; displayName: string; avatarUrl: string | null }): Omit<Me, 'workspaces'> {
+  private toUser(u: { id: string; displayName: string; avatarUrl: string | null }): Omit<Me, 'workspaces' | 'needsSignup'> {
     return { id: u.id, displayName: u.displayName.trim() || 'GitHub 사용자', avatarUrl: safeAvatarUrl(u.avatarUrl) };
   }
 
@@ -385,14 +402,13 @@ export class AuthService {
   }
 
   get serverState(): ServerState {
-    return this.deps.serverUrl ? 'configured' : (this.deps.serverState ?? 'invalid');
+    return this.deps.server().state;
   }
 
   private requireServer(): string {
-    if (this.deps.serverUrl) return this.deps.serverUrl;
-    if (this.serverState === 'not_configured') {
-      throw new AuthError('server_not_configured', '팀 서버가 아직 준비되지 않아 로그인할 수 없어요. 서버가 생기면 이 버전에서도 로그인을 켤 수 있어요.');
-    }
+    const s = this.deps.server();
+    if (s.url) return s.url;
+    if (s.state === 'needs_client_id') throw new AuthError('client_id_missing', 'GitHub 연결(OAuth App Client ID)이 아직 설정되지 않았어요.');
     throw new AuthError('config', 'CADORA_SERVER_URL이 올바르지 않아요. https 주소나 이 PC(localhost)의 http 주소만 쓸 수 있어요.');
   }
 
@@ -401,7 +417,7 @@ export class AuthService {
     return new AuthError(e.code ?? `http_${r.status}`, e.message ? `${fallback} (${e.message})` : `${fallback} (HTTP ${r.status})`);
   }
 
-  private async call(base: string, method: 'GET' | 'POST', path: string, body?: unknown, bearer?: string): Promise<Reply> {
+  private async call(base: string, method: 'GET' | 'POST' | 'PATCH', path: string, body?: unknown, bearer?: string): Promise<Reply> {
     const headers: Record<string, string> = { accept: 'application/json' };
     if (body !== undefined) headers['content-type'] = 'application/json';
     if (bearer) headers['authorization'] = `Bearer ${bearer}`;

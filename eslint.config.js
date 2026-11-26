@@ -33,9 +33,9 @@ export default defineConfig(
     languageOptions: { globals: globals.node },
   },
 
-  // 데모 E2E 스크립트(Windows Node에서 앱을 띄워 CDP로 조작)와 로컬 임시 서버(apps/desktop/dev)
+  // 데모 E2E 스크립트: Windows Node에서 앱을 띄워 CDP로 조작한다
   {
-    files: ['apps/desktop/e2e/**/*.mjs', 'apps/desktop/dev/**/*.mjs'],
+    files: ['apps/desktop/e2e/**/*.mjs'],
     languageOptions: { globals: globals.node },
     rules: { 'no-empty': ['error', { allowEmptyCatch: true }] },
   },

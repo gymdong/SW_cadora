@@ -79,6 +79,8 @@ const bridge: CadoraBridge = {
     openVerification: () => call('team:openVerification'),
     me: () => call('team:me'),
     logout: () => call('team:logout'),
+    completeSignup: (displayName) => call('team:completeSignup', displayName),
+    setGithubClientId: (clientId) => call('team:setGithubClientId', clientId),
   },
   on: (event, cb) => {
     if (!EVENTS.includes(event)) throw new Error('알 수 없는 이벤트예요.');

@@ -115,6 +115,10 @@ try {
   await waitFor(() => c.evaluate(`!!(window.CadoraReal && window.CadoraReal.state.info)`), 10000);
   const info = await c.evaluate(`window.cadora.runtime.info()`);
   check('런타임 정보', info && info.agentRuntime === 'pty' && info.watcher === '@parcel/watcher', info);
+  // 첫 화면은 로그인 화면이다. 이 점검은 "로그인 없이 이 PC 기능만 쓰기"로 들어간다(로그인은 auth-e2e.mjs).
+  await waitFor(() => c.evaluate(`!!document.querySelector('[data-act="real-skip-login"]')`), 10000);
+  await c.evaluate(`document.querySelector('[data-act="real-skip-login"]').click(), true`);
+  await waitFor(() => c.evaluate(`!!document.querySelector('[data-act="real-create-open"]')`));
   check('실제 기능 연결층', await c.evaluate(`window.CadoraReal.available === true && !!document.querySelector('[data-act="real-create-open"]')`), 'CadoraReal + 사이드바 버튼');
 
   // 워크스페이스 두 개

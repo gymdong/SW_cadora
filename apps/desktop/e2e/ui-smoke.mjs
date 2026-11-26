@@ -26,6 +26,9 @@ const enter = (sel) => ev(`(() => { const el = document.querySelector(${JSON.str
 const click = (sel) => ev(`(() => { const el = document.querySelector(${JSON.stringify(sel)}); if (!el) return false; el.click(); return true; })()`);
 await send('Runtime.enable'); await sleep(1200);
 try {
+  // 첫 화면은 로그인 화면이다(시연 데이터 없음). 이 점검은 로그인 없이 이 PC 기능만 쓰는 길로 들어간다.
+  check('첫 화면은 로그인 화면(시연 데이터 없음)', await until(`!!document.querySelector('[data-real-page="auth"]') && !document.body.innerText.includes('캡스톤')`), '');
+  await click('[data-act="real-skip-login"]');
   check('첫 화면에 "이 PC" 새 워크스페이스 버튼', await until(`!!document.querySelector('[data-act="real-create-open"]')`), '');
   await click('[data-act="real-create-open"]');
   check('생성 모달 열림', await until(`!!document.querySelector('#r-name')`), '');

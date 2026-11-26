@@ -7,6 +7,8 @@ const DEVICE = { deviceCode: 'dc-secret', userCode: 'WDJB-MJHT', verificationUri
 const AVATAR = 'https://avatars.githubusercontent.com/u/1?v=4';
 const USER = { id: 'c1', displayName: '건한', avatarUrl: AVATAR };
 const ME = { ...USER, workspaces: [] };
+/** 앱이 화면에 주는 내 정보: 가입 마무리 여부가 붙는다. */
+const ME_OUT = { ...ME, needsSignup: false };
 
 type Reply = { status: number; body?: unknown } | Error;
 type Handler = (body: Record<string, unknown> | undefined, auth: string | undefined) => Reply | Promise<Reply>;
@@ -29,6 +31,7 @@ function fakeServer(routes: Record<string, Handler>) {
 }
 
 function setup(routes: Record<string, Handler>, opts: { stored?: string | null; serverUrl?: string | null; sleep?: (ms: number) => Promise<void> } = {}) {
+  const url = opts.serverUrl === undefined ? BASE : opts.serverUrl;
   const srv = fakeServer(routes);
   const statuses: Array<[AuthStatus, string | undefined]> = [];
   const saved: Array<string | null> = [];
@@ -36,7 +39,7 @@ function setup(routes: Record<string, Handler>, opts: { stored?: string | null; 
   const sleeps: number[] = [];
   let now = 1_000_000;
   const auth = new AuthService({
-    serverUrl: opts.serverUrl === undefined ? BASE : opts.serverUrl,
+    server: () => ({ url, state: url ? 'remote' : 'invalid' }),
     loadRefreshToken: async () => opts.stored ?? null,
     saveRefreshToken: async (t) => {
       saved.push(t);
@@ -103,7 +106,7 @@ describe('Device Flow 로그인', () => {
     expect(t.sleeps).toEqual([5000, 5000, 5000]);
     expect(t.saved).toEqual(['rt-1']);
     const me = await t.auth.me();
-    expect(me).toEqual(ME);
+    expect(me).toEqual(ME_OUT);
     expect(JSON.stringify(me)).not.toMatch(/at-1|rt-1|dc-secret/);
   });
 
@@ -179,15 +182,14 @@ describe('Device Flow 로그인', () => {
     const bad = setup({}, { serverUrl: null });
     await expect(bad.auth.login()).rejects.toMatchObject({ code: 'config' });
     const none = new AuthService({
-      serverUrl: null,
-      serverState: 'not_configured',
+      server: () => ({ url: null, state: 'needs_client_id' }),
       loadRefreshToken: async () => null,
       saveRefreshToken: async () => undefined,
       openExternal: async () => undefined,
       onStatus: () => undefined,
     });
-    expect(none.serverState).toBe('not_configured');
-    await expect(none.login()).rejects.toMatchObject({ code: 'server_not_configured', message: expect.stringContaining('팀 서버') });
+    expect(none.serverState).toBe('needs_client_id');
+    await expect(none.login()).rejects.toMatchObject({ code: 'client_id_missing', message: expect.stringContaining('Client ID') });
     const provider = setup({
       'POST /auth/github/device': () => ({ status: 503, body: { error: { code: 'provider_unavailable', message: 'Device Flow가 꺼져 있어요' } } }),
     });
@@ -207,7 +209,7 @@ describe('세션 유지와 갱신', () => {
     await t.auth.init();
     expect(t.auth.status).toBe('authenticated');
     expect(t.saved).toEqual(['rt-2']);
-    expect(await t.auth.me()).toEqual(ME);
+    expect(await t.auth.me()).toEqual(ME_OUT);
   });
 
   it('폐기된 refresh token이면 지우고 만료를 알린다', async () => {
@@ -232,7 +234,7 @@ describe('세션 유지와 갱신', () => {
     expect(t.saved).toEqual([]);
     await expect(t.auth.me()).rejects.toMatchObject({ code: 'server_unreachable' });
     up = true;
-    expect(await t.auth.me()).toEqual(ME);
+    expect(await t.auth.me()).toEqual(ME_OUT);
     expect(t.saved).toEqual(['rt-2']);
   });
 
@@ -260,8 +262,8 @@ describe('세션 유지와 갱신', () => {
     await t.auth.init(); // 갱신 1번 → at-2
     valid = 'none'; // 서버가 at-2를 더는 받지 않는다
     const [a, b] = await Promise.all([t.auth.me(), t.auth.me()]);
-    expect(a).toEqual(ME);
-    expect(b).toEqual(ME);
+    expect(a).toEqual(ME_OUT);
+    expect(b).toEqual(ME_OUT);
     expect(t.srv.calls.filter((c) => c.path === '/auth/refresh')).toHaveLength(2);
   });
 
@@ -301,5 +303,36 @@ describe('세션 유지와 갱신', () => {
     );
     await t.auth.init();
     expect((await t.auth.me())?.avatarUrl).toBeNull();
+  });
+});
+
+describe('회원가입(첫 GitHub 로그인)', () => {
+  it('처음 온 사람은 needsSignup이 붙고, 이름을 정하면 풀린다(PATCH /me)', async () => {
+    let registered = false;
+    let name = '건한';
+    const me = () => ({ ...USER, displayName: name, workspaces: [], needsSignup: !registered });
+    const t = setup({
+      'POST /auth/github/device': () => ({ status: 200, body: DEVICE }),
+      'POST /auth/github/poll': () => ({ status: 200, body: { accessToken: 'at-1', refreshToken: 'rt-1', user: USER, needsSignup: true } }),
+      'GET /me': (_b, a) => (a === 'Bearer at-1' ? { status: 200, body: me() } : { status: 401 }),
+      'PATCH /me': (b, a) => {
+        if (a !== 'Bearer at-1') return { status: 401 };
+        name = String(b?.['displayName']);
+        registered = true;
+        return { status: 200, body: me() };
+      },
+    });
+    await t.auth.login();
+    await vi.waitFor(() => expect(t.auth.status).toBe('authenticated'));
+    expect((await t.auth.me())?.needsSignup).toBe(true);
+    const done = await t.auth.updateProfile('김건한');
+    expect(done).toMatchObject({ displayName: '김건한', needsSignup: false });
+    expect(t.srv.calls.find((c) => c.method === 'PATCH')).toMatchObject({ path: '/me', body: { displayName: '김건한' }, auth: 'Bearer at-1' });
+    expect((await t.auth.me())?.needsSignup).toBe(false);
+  });
+
+  it('로그인 전에는 가입 마무리를 할 수 없다', async () => {
+    const t = setup({});
+    await expect(t.auth.updateProfile('누구')).rejects.toMatchObject({ code: 'unauthenticated' });
   });
 });

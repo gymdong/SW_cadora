@@ -7,8 +7,10 @@ import type { Plugin } from 'vite';
 // electron-builder가 설치 파일에 넣어 asar 밖으로 푼다(electron-builder.yml asarUnpack). 나머지 코드는 out/에 묶인다.
 
 // 설치 파일(배포 빌드)이 기본으로 쓸 Cadora 서버 주소. 빌드할 때 CADORA_BUILD_SERVER_URL로 넣는다.
-// 비워 두면 설치판에서는 로그인을 "팀 서버 준비 전"으로 보여 준다(개발 모드 기본값은 http://localhost:4000/v1).
+// 비워 두면 앱 안 임시 서버(src/main/local-auth-server.ts)로 로그인한다.
 const BUILD_SERVER_URL = process.env['CADORA_BUILD_SERVER_URL'] ?? '';
+// 팀 서버가 없을 때 앱 안 임시 서버가 쓸 GitHub OAuth App Client ID(비밀값 아님). 비우면 앱이 처음 실행할 때 입력받는다.
+const BUILD_GITHUB_CLIENT_ID = process.env['CADORA_BUILD_GITHUB_CLIENT_ID'] ?? '';
 
 // 앱 화면의 Content-Security-Policy. 개발 서버는 HMR용 인라인 스크립트를 쓰므로 배포 빌드에만 넣는다.
 const CONTENT_SECURITY_POLICY = [
@@ -40,7 +42,10 @@ function contentSecurityPolicy(): Plugin {
 
 export default defineConfig({
   main: {
-    define: { __CADORA_BUILD_SERVER_URL__: JSON.stringify(BUILD_SERVER_URL) },
+    define: {
+      __CADORA_BUILD_SERVER_URL__: JSON.stringify(BUILD_SERVER_URL),
+      __CADORA_BUILD_GITHUB_CLIENT_ID__: JSON.stringify(BUILD_GITHUB_CLIENT_ID),
+    },
   },
   preload: {},
   renderer: {

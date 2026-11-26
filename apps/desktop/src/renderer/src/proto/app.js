@@ -680,39 +680,157 @@
     if (runs) parts.push(`에이전트 ${runs}`);
     return parts.join(' · ');
   }
-  // Cadora 계정: 실제 서버(CADORA_SERVER_URL)의 GitHub Device Flow. 토큰은 화면에 오지 않고 main에만 있다.
-  function realAccountHTML() {
-    const A = R.state.auth;
-    const head = '<div class="s-sec">Cadora 계정<span class="rtag real">실제</span></div>';
-    if (A.status === 'authenticated' && A.me) {
-      const me = A.me;
-      const av = me.avatarUrl ? `<img src="${esc(me.avatarUrl)}" alt="" referrerpolicy="no-referrer">` : esc([...String(me.displayName || '?')][0] || '?');
-      return `${head}<div class="racct" data-real-account="in"><span class="racct-av">${av}</span>
-        <span class="grow"><span class="nm">${esc(me.displayName)}</span><span class="mt">GitHub로 로그인됨</span></span>
-        <button class="btn sm" data-act="real-account-logout">로그아웃</button></div>`;
-    }
-    const srvState = R.state.info && R.state.info.authServerState;
-    if (srvState === 'not_configured') {
-      return `${head}<div class="racct col" data-real-account="no-server"><span class="nm">로그인 준비 중</span>
-        <span class="mt">팀 서버가 아직 없어서 이 버전에서는 로그인을 쓸 수 없어요. 이 PC의 워크스페이스 · 브라우저 · 터미널은 그대로 쓸 수 있어요.</span></div>`;
-    }
-    if (srvState === 'invalid') {
-      return `${head}<div class="racct col" data-real-account="bad-server"><span class="mt">서버 주소(CADORA_SERVER_URL) 설정이 올바르지 않아요. https 주소나 이 PC(localhost)의 http 주소만 쓸 수 있어요.</span></div>`;
-    }
-    if (A.status === 'checking' || A.status === 'authenticated') return `${head}<div class="racct"><span class="mt">계정 확인 중…</span></div>`;
-    if (A.status === 'offline') {
-      return `${head}<div class="racct col" data-real-account="offline"><span class="mt">${esc(A.message || 'Cadora 서버에 연결할 수 없어요.')}</span>
-        <button class="btn sm" data-act="real-account-retry">다시 시도</button></div>`;
-    }
-    const note = A.message && !(ui.modal && ui.modal.type === 'real-login') ? `<div class="rnote racct-note">${esc(A.message)}</div>` : '';
-    return `${head}<button class="s-add racct-login" data-act="real-login" ${A.busy ? 'disabled' : ''}>${ico('lock', 15)}GitHub로 로그인</button>${note}`;
+  // ───────── 실제 모드(기본): 로그인·회원가입 → 빈 작업공간에서 시작 ─────────
+  // 시연 데이터(캡스톤 팀플 등)는 계정 메뉴의 "시연 화면 보기"에서만 보인다. 팀 기능은 팀 서버가 생길 때까지 빈 화면으로 둔다.
+  const realMe = () => { const A = R.state.auth; return A.status === 'authenticated' && A.me ? A.me : null; };
+  const realInitial = name => esc([...String(name || '?').trim()][0] || '?');
+  const realAvatar = (me, size) => me && me.avatarUrl
+    ? `<span class="av ravatar" style="width:${size}px;height:${size}px"><img src="${esc(me.avatarUrl)}" alt="" referrerpolicy="no-referrer"></span>`
+    : `<span class="av ravatar" style="width:${size}px;height:${size}px">${me ? realInitial(me.displayName) : '?'}</span>`;
+  function realServerNote() {
+    const info = R.state.info || {};
+    if (info.authServerState === 'local') return '앱 안 임시 서버로 로그인해요 · 계정은 이 PC에만 저장돼요. 팀 서버가 생기면 그 서버로 바뀌어요.';
+    if (info.authServerState === 'remote') return `팀 서버 ${esc(String(info.authServer || '').replace(/^https?:\/\//, ''))}`;
+    return '';
   }
+
+  function realSplashHTML() {
+    return `<div class="auth-page" data-real-page="checking"><div class="auth-card center"><div class="auth-brand">CADORA</div><div class="auth-lead"><span class="ld-dot"></span>계정을 확인하는 중이에요…</div></div></div>`;
+  }
+
+  function realAuthBody() {
+    const A = R.state.auth, info = R.state.info || {}, tab = ui.authTab || 'login';
+    if (info.authServerState === 'invalid') return '<div class="merr">서버 주소(CADORA_SERVER_URL) 설정이 올바르지 않아요. https 주소나 이 PC(localhost)의 http 주소만 쓸 수 있어요.</div>';
+    if (info.authServerState === 'needs_client_id') {
+      return `<div class="auth-setup" data-real-setup>
+        <b>GitHub 연결 설정이 한 번 필요해요</b>
+        <p>로그인은 GitHub 계정으로 해요. 팀 서버가 생기기 전까지는 이 앱 안의 임시 서버가 GitHub에 직접 물어보는데, 그러려면 GitHub OAuth App의 <b>Client ID</b>가 필요해요. 비밀값이 아니에요.</p>
+        <ol><li>GitHub → Settings → Developer settings → OAuth Apps → New OAuth App</li><li>Homepage URL은 저장소 주소, Authorization callback URL은 http://localhost</li><li><b>Enable Device Flow</b>를 켜고 Register application</li><li>나온 Client ID를 아래에 붙여 넣기</li></ol>
+        <div class="field-row"><input id="r-client-id" data-input="real-client-id" data-enter="real-client-id-save" placeholder="예: Ov23li…" autocomplete="off" spellcheck="false" value="${esc(ui.clientIdInput || '')}"><button class="btn primary" data-act="real-client-id-save">저장</button></div>
+      </div>`;
+    }
+    const msg = A.message ? `<div class="merr" data-real-auth-error>${esc(A.message)}</div>` : '';
+    const p = A.pending;
+    if (p) {
+      const mins = Math.max(1, Math.round((new Date(p.expiresAt).getTime() - Date.now()) / 60000));
+      return `<div class="auth-step">${tab === 'signup' ? '가입' : '로그인'}할 GitHub 계정에서 아래 코드를 넣고 승인해 주세요. 코드는 ${mins}분 동안 쓸 수 있어요.</div>
+        <div class="rcode" data-real-code>${esc(p.userCode)}</div>
+        <div class="rnote"><span class="ld-dot"></span>GitHub 승인을 기다리는 중이에요. 승인하면 자동으로 넘어가요.</div>
+        <div class="auth-actions"><button class="btn primary big" data-act="real-auth-open">코드 복사하고 GitHub 열기</button><button class="btn big" data-act="real-auth-cancel">취소</button></div>`;
+    }
+    if (A.busy) return '<div class="auth-step"><span class="ld-dot"></span>GitHub 로그인 코드를 받는 중이에요…</div>';
+    if (tab === 'signup') {
+      return `${msg}<div class="auth-step">Cadora 계정은 GitHub 계정으로 만들어요. 비밀번호를 따로 만들지 않아요.</div>
+        <ol class="auth-steps"><li>GitHub에서 코드 승인</li><li>팀에 보일 이름 정하기</li><li>빈 작업공간에서 시작</li></ol>
+        <div class="auth-actions"><button class="btn primary big" data-act="real-auth-start">GitHub로 가입하기</button></div>`;
+    }
+    return `${msg}<div class="auth-step">GitHub 계정으로 로그인해요. 처음이면 로그인하면서 가입도 함께 돼요.</div>
+      <div class="auth-actions"><button class="btn primary big" data-act="real-auth-start">GitHub로 로그인</button></div>`;
+  }
+
+  function realAuthHTML() {
+    const tab = ui.authTab || 'login';
+    const lock = !!R.state.auth.pending || R.state.auth.busy;
+    return `<div class="auth-page" data-real-page="auth"><div class="auth-card">
+      <div class="auth-brand">CADORA</div>
+      <div class="auth-lead">프로젝트마다 로그인 · 파일 · 실행 환경을 나누고, 팀의 AI 작업을 한눈에 봐요.</div>
+      <div class="auth-tabs">${[['login', '로그인'], ['signup', '회원가입']].map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" data-act="real-auth-tab" data-t="${k}" ${lock ? 'disabled' : ''}>${l}</button>`).join('')}</div>
+      <div class="auth-body">${realAuthBody()}</div>
+      <div class="auth-foot"><button class="linkish" data-act="real-skip-login">로그인 없이 이 PC 기능만 쓰기</button><div class="auth-server">${realServerNote()}</div></div>
+    </div></div>`;
+  }
+
+  function realSignupHTML() {
+    const me = realMe();
+    if (ui.suName === undefined) ui.suName = me.displayName;
+    return `<div class="auth-page" data-real-page="signup"><div class="auth-card wide">
+      <div class="auth-brand">CADORA</div>
+      <h2 class="auth-h">가입을 마무리해요</h2>
+      <div class="auth-lead">GitHub 계정 확인이 끝났어요. 팀에 보일 이름을 정하고, 무엇이 공유되는지 확인해 주세요.</div>
+      <div class="su-who">${realAvatar(me, 40)}<div><b>${esc(me.displayName)}</b><span>이 GitHub 계정으로 가입해요</span></div></div>
+      <div class="mlabel">Cadora에서 쓸 이름</div>
+      <div class="field-row"><input id="r-su-name" data-input="real-su-name" data-enter="real-signup-done" maxlength="40" value="${esc(ui.suName)}" autocomplete="off"></div>
+      <div class="su-two"><div><b>팀에 공유돼요</b>작업 제목 · 에이전트 상태 · 브랜치 · 바뀐 파일의 상대 경로 · 변경 종류 · 충돌 경고</div>
+        <div><b>공유하지 않아요</b>코드 · 프롬프트 원문 · 웹사이트 로그인 쿠키와 토큰 · 환경변수 값 · 내 PC의 폴더 경로</div></div>
+      <label class="su-agree"><input type="checkbox" data-act="real-su-agree" ${ui.suAgree ? 'checked' : ''}> 위 내용을 확인했어요</label>
+      ${ui.suErr ? `<div class="merr" data-real-signup-error>${esc(ui.suErr)}</div>` : ''}
+      <div class="mrow"><button class="btn" data-act="real-account-logout">다른 계정으로</button><button class="btn primary" data-act="real-signup-done" ${ui.suBusy ? 'disabled' : ''}>가입 완료</button></div>
+    </div></div>`;
+  }
+
+  const REAL_VIEWS = [['home', '작업공간', 'home'], ['team', '팀', 'graph'], ['activity', '활동', 'activity'], ['cal', '캘린더', 'cal']];
+  function realShellHTML(side, pane) {
+    const me = realMe();
+    const nav = REAL_VIEWS.map(([id, label, icon]) => `<button class="nav ${ui.view === id ? 'on' : ''}" data-act="real-view" data-v="${id}"><span class="ic">${ico(icon)}</span>${label}</button>`).join('');
+    return `<div class="win" data-real-page="app">
+      <header class="top"><span class="brand">CADORA</span><div></div>
+        <div class="top-r">${me ? `<span class="top-user">${esc(me.displayName)}</span>` : '<button class="btn sm" data-act="real-login-from-app">로그인</button>'}</div></header>
+      <div class="body"><nav class="rail">${nav}
+        <button class="me" data-act="menu" data-m="real-account" title="계정">${realAvatar(me, 34)}</button>
+        <div class="me-label">${me ? esc(me.displayName) : '로그인 안 함'}</div></nav>
+        <div class="frame"><aside class="side">${side}</aside><main class="pane">${pane}</main></div></div></div>`;
+  }
+
+  function realAccountMenuHTML() {
+    if (ui.menu !== 'real-account') return '';
+    const me = realMe();
+    return `<div class="menu rmenu">${me
+      ? `<div class="rmenu-who">${realAvatar(me, 32)}<div><b>${esc(me.displayName)}</b><span>GitHub로 로그인됨</span></div></div><button class="menu-item" data-act="real-account-logout">로그아웃</button>`
+      : '<div class="menu-note">로그인하지 않았어요. 팀 기능은 로그인하면 쓸 수 있어요.</div><button class="menu-item" data-act="real-login-from-app">로그인 · 회원가입</button>'}
+      <button class="menu-item" data-act="real-sim-on">시연 화면 보기</button>
+      <div class="menu-note">${realServerNote()}</div></div>`;
+  }
+
+  function realWelcomeHTML() {
+    const me = realMe(), has = R.state.workspaces.length > 0;
+    return `<div class="rwelcome" data-real-page="welcome">
+      <h1>${me ? `${esc(me.displayName)}님, 반가워요` : '반가워요'}</h1>
+      <p>${has ? '왼쪽에서 워크스페이스를 고르거나 새로 만드세요.' : '아직 워크스페이스가 없어요. 첫 워크스페이스를 만들어 보세요.'}</p>
+      <button class="btn primary big" data-act="real-create-open">${ico('plus', 15)}${has ? '새 워크스페이스' : '첫 워크스페이스 만들기'}</button>
+      <div class="rwelcome-steps">
+        <div><b>1. 워크스페이스</b>과제 · 팀 프로젝트마다 폴더 · 다운로드 폴더 · 브라우저 세션이 따로 생겨요.</div>
+        <div><b>2. 브라우저 탭</b>LMS · 노션 · GitHub에 워크스페이스별로 로그인해요. 다른 워크스페이스와 섞이지 않아요.</div>
+        <div><b>3. 터미널 · Claude Code</b>워크스페이스 폴더에서 PowerShell과 Claude Code를 바로 띄우고 상태를 봐요.</div>
+      </div></div>`;
+  }
+  const realEmptyPane = (title, lines, extra = '') => `<div class="rwelcome rempty"><h1>${title}</h1>${lines.map(l => `<p>${l}</p>`).join('')}${extra}</div>`;
+  const realSideHead = title => `<div class="s-head" style="cursor:default">${title}</div>`;
+  function realTeamPane() {
+    const me = realMe();
+    if (!me) return realEmptyPane('팀', ['팀 기능은 로그인하면 쓸 수 있어요.'], '<button class="btn primary" data-act="real-login-from-app">로그인 · 회원가입</button>');
+    const local = R.state.info && R.state.info.authServerState === 'local';
+    return realEmptyPane('아직 팀이 없어요', ['팀을 만들거나 초대를 받으면 팀원의 AI 작업 · 바뀐 파일 · 충돌 경고를 여기서 함께 봐요.', '코드와 프롬프트 원문은 공유하지 않고, 작업 제목과 바뀐 파일 경로만 공유해요.'],
+      `<div class="rempty-actions"><button class="btn primary" disabled>팀 만들기</button><button class="btn" disabled>초대 코드로 참여</button></div>
+       <div class="rnote">팀 만들기와 초대는 팀 서버가 연결되면 열려요.${local ? ' 지금은 앱 안 임시 서버라 계정이 이 PC에만 있어요.' : ''}</div>`);
+  }
+  function realTeamSide() {
+    const me = realMe(), teams = me ? me.workspaces : [];
+    return `${realSideHead('팀')}<div class="s-sec">내 팀</div>${teams.length ? teams.map(t => `<div class="s-item"><span class="grow">${esc(t.name)}</span></div>`).join('') : '<div class="rnote" style="padding:2px 18px 6px;color:var(--side-mute)">아직 없어요.</div>'}`;
+  }
+  function realModalLayer() {
+    const m = ui.modal;
+    if (!m || !String(m.type).startsWith('real-')) return '';
+    return `<div class="modal-back" data-act="modal-back"><div class="modal" role="dialog" aria-modal="true">${realModalHTML(m)}</div></div>`;
+  }
+  function realAppHTML() {
+    const A = R.state.auth, me = realMe();
+    if (A.status === 'checking' || (A.status === 'authenticated' && !A.me)) return realSplashHTML();
+    if (!me && !A.skipped) return realAuthHTML();
+    if (me && me.needsSignup) return realSignupHTML();
+    let side, pane;
+    if (ui.view === 'team') { side = realTeamSide(); pane = realTeamPane(); }
+    else if (ui.view === 'activity') { side = realSideHead('활동'); pane = realEmptyPane('팀 활동', ['팀원이 에이전트를 실행하거나 파일을 바꾸면 여기에 시간순으로 모여요.', '팀에 들어가면 시작돼요.']); }
+    else if (ui.view === 'cal') { side = realSideHead('캘린더'); pane = realEmptyPane('캘린더', ['워크스페이스의 마감과 일정을 모아 보는 기능은 준비 중이에요.']); }
+    else { side = `${realSideHead('작업공간')}${realSideHTML()}`; pane = realSel && realWs(realSel) ? realHomePane() : realWelcomeHTML(); }
+    return realShellHTML(side, pane) + realAccountMenuHTML() + realModalLayer();
+  }
+  const realSimBannerHTML = () => '<div class="rsim-banner" data-real-sim>시연 화면이에요 · 가짜 데이터 <button class="btn sm" data-act="real-sim-off">실제 화면으로</button></div>';
 
   function realSideHTML() {
     const items = R.state.workspaces.map(w => `<button class="s-item tall ${realSel === w.id ? 'on' : ''}" data-act="real-ws" data-id="${esc(w.id)}">
         <span class="wsq" style="background:${realColor(w)}">${esc(realShort(w))}</span>
         <span class="grow"><span class="nm">${esc(w.name)}</span><span class="mt"><i style="background:${statusDot(realStatus(w))}"></i>${esc(realMeta(w))}</span></span></button>`).join('');
-    return `${realAccountHTML()}<div class="s-sec">이 PC<span class="rtag real">실제</span></div>${items || '<div class="rnote" style="padding:2px 18px 6px;color:var(--side-mute)">아직 없어요. 만들면 폴더 · 브라우저 세션 · 터미널이 따로 생겨요.</div>'}
+    return `<div class="s-sec">이 PC<span class="rtag real">실제</span></div>${items || '<div class="rnote" style="padding:2px 18px 6px;color:var(--side-mute)">아직 없어요. 만들면 폴더 · 브라우저 세션 · 터미널이 따로 생겨요.</div>'}
       <button class="s-add" data-act="real-create-open">${ico('plus', 15)}새 워크스페이스</button>`;
   }
   const fmtClock = iso => { const d = new Date(iso); return `${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`; };
@@ -811,26 +929,6 @@
         ${m.err ? `<div class="merr">${esc(m.err)}</div>` : ''}
         <div class="mrow"><button class="btn" data-act="modal-close">취소</button><button class="btn primary" data-act="real-agent-start">실행</button></div>`;
     }
-    if (m.type === 'real-login') {
-      const A = R.state.auth;
-      const p = A.pending;
-      const srv = (R.state.info && R.state.info.authServer) || '설정 오류(CADORA_SERVER_URL)';
-      const h = '<h2>GitHub로 로그인 <span class="rtag real">실제</span></h2>';
-      if (!p && (A.busy || A.status === 'pending')) {
-        return `${h}<div class="sub">GitHub 로그인 코드를 받는 중이에요…</div><div class="rnote">서버 ${esc(srv)}</div>
-          <div class="mrow"><button class="btn" data-act="real-login-cancel">취소</button></div>`;
-      }
-      if (!p) {
-        return `${h}<div class="merr" data-real-login-error>${esc(A.message || '로그인하지 못했어요.')}</div><div class="rnote" style="margin-top:8px">서버 ${esc(srv)}</div>
-          <div class="mrow"><button class="btn" data-act="modal-close">닫기</button><button class="btn primary" data-act="real-login-retry">다시 시도</button></div>`;
-      }
-      const mins = Math.max(1, Math.round((new Date(p.expiresAt).getTime() - Date.now()) / 60000));
-      return `${h}<div class="sub">GitHub 페이지에 아래 코드를 넣고 승인하면 이 앱이 자동으로 로그인돼요. 코드는 ${mins}분 동안 쓸 수 있어요.</div>
-        <div class="rcode" data-real-code>${esc(p.userCode)}</div>
-        <div class="rnote"><span class="ld-dot"></span>GitHub 승인을 기다리는 중 · 서버 ${esc(srv)}</div>
-        <div class="rnote">Cadora는 GitHub 공개 프로필(이름 · 아바타)만 읽어요. 저장소 권한은 요청하지 않아요.</div>
-        <div class="mrow"><button class="btn" data-act="real-login-cancel">취소</button><button class="btn primary" data-act="real-login-open">코드 복사하고 GitHub 열기</button></div>`;
-    }
     if (m.type === 'real-remove') {
       const w = realWs(m.id);
       return `<h2>워크스페이스 삭제</h2>
@@ -891,12 +989,33 @@
       R.startAgent(realSel, title).then(() => later(80, () => R.focusTerminal(realSel)));
     },
     'real-agent-stop': d => { R.stopAgent(d.id); },
-    'real-login': () => { ui.menu = null; ui.modal = { type: 'real-login' }; R.login(); },
-    'real-login-retry': () => { R.login(); },
-    'real-login-open': () => { R.openLoginPage().then(() => toast('코드를 복사했어요 — 열린 GitHub 페이지에 붙여 넣으세요')); },
-    'real-login-cancel': () => { ui.modal = null; R.cancelLogin(); },
-    'real-account-logout': () => { R.logoutAccount().then(() => toast('로그아웃했어요 — 이 PC에 저장된 로그인 정보도 지웠어요')); },
-    'real-account-retry': () => { R.retryAccount(); },
+    'real-view': d => { ui.view = d.v; ui.menu = null; },
+    'real-auth-tab': d => { ui.authTab = d.t; R.clearAuthMessage(); },
+    'real-auth-start': () => { R.login(); },
+    'real-auth-open': () => { R.openLoginPage().then(() => toast('코드를 복사했어요 — 열린 GitHub 페이지에 붙여 넣으세요')); },
+    'real-auth-cancel': () => { R.cancelLogin(); },
+    'real-client-id-save': () => {
+      const v = String(ui.clientIdInput || '').trim();
+      if (!/^[A-Za-z0-9._-]{8,64}$/.test(v)) { toast('Client ID 형식이 올바르지 않아요. GitHub OAuth App 화면의 Client ID를 그대로 붙여 넣어 주세요'); return; }
+      R.setClientId(v).then(ok => { if (ok) { ui.clientIdInput = ''; toast('GitHub 연결을 저장했어요 — 이제 로그인할 수 있어요'); } });
+    },
+    'real-skip-login': () => { R.skipLogin(); ui.view = 'home'; },
+    'real-login-from-app': () => { ui.menu = null; ui.modal = null; R.unskip(); },
+    'real-su-agree': (d, t) => { ui.suAgree = !!t.checked; ui.suErr = null; },
+    'real-signup-done': () => {
+      const name = String(ui.suName || '').trim();
+      if (!name) { ui.suErr = '이름을 적어 주세요'; return; }
+      if (!ui.suAgree) { ui.suErr = '공유되는 것과 공유하지 않는 것을 확인했다고 체크해 주세요'; return; }
+      ui.suBusy = true; ui.suErr = null;
+      R.completeSignup(name).then(me => {
+        ui.suBusy = false;
+        if (me && !me.needsSignup) { ui.suName = undefined; ui.suAgree = false; toast(`가입을 마쳤어요 — ${esc(me.displayName)}님, 반가워요`); }
+        render();
+      });
+    },
+    'real-account-logout': () => { ui.menu = null; ui.suName = undefined; ui.suAgree = false; ui.suErr = null; R.logoutAccount().then(() => toast('로그아웃했어요 — 이 PC에 저장된 로그인 정보도 지웠어요')); },
+    'real-sim-on': () => { ui.simMode = true; ui.menu = null; ui.view = 'home'; },
+    'real-sim-off': () => { ui.simMode = false; ui.menu = null; ui.view = 'home'; },
     'real-env-add': () => {
       const n = document.getElementById('real-env-name'), v = document.getElementById('real-env-value');
       const name = n ? n.value.trim() : '', value = v ? v.value : '';
@@ -1709,21 +1828,27 @@ docker compose pull</pre><div class="btns"><button class="btn primary" data-act=
     const calEl = document.getElementById('calscroll');
     const calTop = calEl ? calEl.scrollTop : null;
 
-    if (!canSee(ui.viewer, curId())) ui.cur[ui.viewer] = 'capstone';
-    let side, pane, dark = false;
-    // 본문을 먼저 그려야 읽음 처리가 레일 배지에 반영된다
-    if (ui.view === 'activity') { pane = activityPane(); side = activitySide(); }
-    else if (ui.view === 'cal') { pane = calPane(); side = calSide(); }
-    else if (ui.view === 'team') { pane = teamPane(); side = teamSide(); dark = true; }
-    else { pane = homePane(); side = homeSide(); }
-    app.innerHTML = shell(side, pane, dark) + menuHTML() + (ui.view === 'cal' ? popoverHTML() : '') + modalHTML();
+    // 실제 모드가 기본이다. 시연(가짜 데이터) 화면은 계정 메뉴의 "시연 화면 보기"로만 연다.
+    const realMode = !!R && !ui.simMode;
+    if (realMode) {
+      app.innerHTML = realAppHTML();
+    } else {
+      if (!canSee(ui.viewer, curId())) ui.cur[ui.viewer] = 'capstone';
+      let side, pane, dark = false;
+      // 본문을 먼저 그려야 읽음 처리가 레일 배지에 반영된다
+      if (ui.view === 'activity') { pane = activityPane(); side = activitySide(); }
+      else if (ui.view === 'cal') { pane = calPane(); side = calSide(); }
+      else if (ui.view === 'team') { pane = teamPane(); side = teamSide(); dark = true; }
+      else { pane = homePane(); side = homeSide(); }
+      app.innerHTML = shell(side, pane, dark) + menuHTML() + (ui.view === 'cal' ? popoverHTML() : '') + modalHTML() + (R ? realSimBannerHTML() : '');
+    }
 
     Object.keys(kept).forEach(id => { const el = document.getElementById(id); if (el && !el.value) el.value = kept[id]; });
     ['msgs', 'termbody', 'htermbody'].forEach(id => { const el = document.getElementById(id); if (el) el.scrollTop = el.scrollHeight; });
     const cs = document.getElementById('calscroll');
     if (cs && calTop != null) cs.scrollTop = calTop;
     if (focusId) { const el = document.getElementById(focusId); if (el) el.focus({ preventScroll: true }); }
-    syncPresence();
+    if (!realMode) syncPresence();
     if (R) R.layout(ui.view === 'home' && !ui.modal ? realSel : null);
   }
 
@@ -1874,6 +1999,8 @@ docker compose pull</pre><div class="btns"><button class="btn primary" data-act=
     'c-name': v => { ui.modal.draft.name = v; ui.modal.err = null; },
     'c-folder': v => { ui.modal.draft.folder = v; },
     'c-cmd': v => { ui.modal.draft.cmd = v; },
+    'real-client-id': v => { ui.clientIdInput = v; },
+    'real-su-name': v => { ui.suName = v; ui.suErr = null; },
   };
 
   document.addEventListener('click', e => {
@@ -1892,7 +2019,7 @@ docker compose pull</pre><div class="btns"><button class="btn primary" data-act=
 
   document.addEventListener('input', e => {
     const k = e.target.dataset && e.target.dataset.input;
-    if (k && INPUTS[k] && ui.modal) INPUTS[k](e.target.value);
+    if (k && INPUTS[k] && (ui.modal || k.startsWith('real-'))) INPUTS[k](e.target.value);
   });
 
   document.addEventListener('keydown', e => {
@@ -1921,13 +2048,14 @@ docker compose pull</pre><div class="btns"><button class="btn primary" data-act=
     if (m[2]) for (let i = 1; i <= Math.min(+m[2], STEPS.length); i++) doStep(i, true);
   }
   if (R) {
+    let prevAuth = R.state.auth.status;
     R.onChange(() => {
-      // 로그인 창이 열린 채로 승인되면 창을 닫고 알린다.
       const A = R.state.auth;
-      if (ui.modal && ui.modal.type === 'real-login' && A.status === 'authenticated' && A.me) {
-        ui.modal = null;
-        toast(`GitHub 계정 <b>${esc(A.me.displayName)}</b>(으)로 로그인했어요`);
+      // GitHub 승인이 끝나 들어오면 알린다(처음 온 사람은 가입 마무리 화면이 대신 뜬다).
+      if (prevAuth === 'pending' && A.status === 'authenticated' && A.me && !A.me.needsSignup && !ui.simMode) {
+        toast(ui.authTab === 'signup' ? `이미 가입된 계정이라 바로 로그인했어요 — ${esc(A.me.displayName)}님` : `${esc(A.me.displayName)}님, 로그인했어요`);
       }
+      if (A.status !== 'authenticated' || A.me) prevAuth = A.status;
       render();
     });
     R.setToast(msg => toast(esc(msg)));

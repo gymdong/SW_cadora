@@ -2,7 +2,8 @@ import { app, BrowserWindow, session, shell } from 'electron';
 import { isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AgentManager } from './agents';
-import { AuthService, DEFAULT_SERVER_URL, parseServerUrl } from './auth';
+import { AuthService } from './auth';
+import { AuthBackend } from './auth-backend';
 import { authStore } from './auth-store';
 import { BrowserManager } from './browser';
 import { emit, setEventTarget } from './events';
@@ -31,11 +32,9 @@ app.on('second-instance', () => {
   win.focus();
 });
 
-// Cadora 서버 주소: CADORA_SERVER_URL > 설치판은 빌드 때 넣은 주소(없으면 "준비 전") > 개발 모드는 http://localhost:4000/v1.
+// 빌드 때 넣는 값(electron.vite.config.ts). 팀 서버 주소가 없으면 앱 안 임시 서버를 쓴다(auth-backend.ts).
 declare const __CADORA_BUILD_SERVER_URL__: string;
-const configuredServer = process.env['CADORA_SERVER_URL'] ?? (app.isPackaged ? __CADORA_BUILD_SERVER_URL__ : DEFAULT_SERVER_URL);
-const serverUrl = configuredServer ? parseServerUrl(configuredServer) : null;
-const serverState = !configuredServer ? 'not_configured' : serverUrl ? 'configured' : 'invalid';
+declare const __CADORA_BUILD_GITHUB_CLIENT_ID__: string;
 
 const devServerUrl = process.env['ELECTRON_RENDERER_URL'];
 const rendererFileUrl = pathToFileURL(join(__dirname, '../renderer/index.html')).href;
@@ -117,11 +116,18 @@ void app.whenReady().then(async () => {
   await agents.detect();
   for (const w of workspaces.all()) void watcher.watch(w.id, w.localPath, w.downloadDir).catch(() => undefined);
 
-  // Cadora 계정: CADORA_SERVER_URL(기본 http://localhost:4000/v1)의 GitHub Device Flow. refresh token은 safeStorage로 암호화해 둔다.
+  // Cadora 계정: 팀 서버(없으면 앱 안 임시 서버)의 GitHub Device Flow. refresh token은 safeStorage로 암호화해 둔다.
+  const backend = new AuthBackend({
+    userData: app.getPath('userData'),
+    remoteUrl: process.env['CADORA_SERVER_URL'] ?? __CADORA_BUILD_SERVER_URL__,
+    envClientId: process.env['CADORA_GITHUB_CLIENT_ID'] ?? '',
+    buildClientId: __CADORA_BUILD_GITHUB_CLIENT_ID__,
+    fakeGithub: process.env['CADORA_FAKE_GITHUB'],
+  });
+  await backend.start().catch(() => undefined);
   const store = authStore(join(app.getPath('userData'), 'auth.json'));
   const auth = new AuthService({
-    serverUrl,
-    serverState,
+    server: () => backend.server(),
     loadRefreshToken: () => store.load(),
     saveRefreshToken: (token) => store.save(token),
     openExternal: (url) => shell.openExternal(url),
@@ -137,6 +143,7 @@ void app.whenReady().then(async () => {
     agents,
     watcher,
     auth,
+    backend,
     profileRoot: join(app.getPath('userData'), 'browser-profiles'),
     isAppUrl: (url) => isAppSenderUrl(url, devServerUrl, rendererFileUrl),
   });
@@ -144,6 +151,7 @@ void app.whenReady().then(async () => {
 
   cleanup = async () => {
     auth.dispose();
+    await backend.stop();
     browser.flush();
     await terminals.disposeAll();
     await watcher.disposeAll();

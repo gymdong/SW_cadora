@@ -105,11 +105,13 @@ export interface RuntimeInfo {
   watcher: '@parcel/watcher';
   /** 비밀값 저장소(safeStorage)를 쓸 수 있는지(Windows는 DPAPI). */
   secretStore: boolean;
-  /** 로그인에 쓰는 Cadora 서버 주소(CADORA_SERVER_URL, 기본 http://localhost:4000/v1). 없거나 올바르지 않으면 null. */
+  /** 로그인에 쓰는 서버 주소. 팀 서버(CADORA_SERVER_URL·빌드 때 주소)가 없으면 앱 안 임시 서버(127.0.0.1). */
   authServer: string | null;
-  /** not_configured: 설치판에 팀 서버 주소가 아직 없음(로그인 "준비 전"). invalid: 주소 설정 오류. */
-  authServerState: 'configured' | 'not_configured' | 'invalid';
+  /** remote: 팀 서버, local: 앱 안 임시 서버(계정이 이 PC에만 있음), invalid: 주소 설정 오류, needs_client_id: GitHub 연결 설정 필요. */
+  authServerState: AuthServerState;
 }
+
+export type AuthServerState = 'remote' | 'local' | 'invalid' | 'needs_client_id';
 
 /** 로그인 상태(API.md §3 "team:authChanged"). */
 export type AuthStatus = 'pending' | 'authenticated' | 'expired' | 'denied' | 'logged_out';
@@ -121,6 +123,8 @@ export interface Me {
   displayName: string;
   avatarUrl: string | null;
   workspaces: Array<{ id: string; name: string; role: Role }>;
+  /** 데모 확장: 첫 GitHub 로그인 뒤 가입 마무리(이름 확인·공유 범위 동의)가 남았는지. */
+  needsSignup: boolean;
 }
 
 /** 로그인 시작 결과. 화면에는 사용자가 입력할 코드와 GitHub 주소만 준다(deviceCode는 main에만 있다). */
@@ -214,6 +218,10 @@ export interface CadoraBridge {
     /** 로그인되어 있으면 내 정보, 아니면 null. 저장된 로그인이 있는데 서버에 닿지 못하면 오류. */
     me(): Promise<Me | null>;
     logout(): Promise<void>;
+    /** 데모: 가입 마무리(팀에 보일 이름 확정). */
+    completeSignup(displayName: string): Promise<Me>;
+    /** 데모: 앱 안 임시 서버에 쓸 GitHub OAuth App Client ID(비밀값 아님)를 저장하고 서버를 켠다. */
+    setGithubClientId(clientId: string): Promise<{ authServer: string | null; authServerState: AuthServerState }>;
   };
 
   on<E extends CadoraEventName>(event: E, cb: (payload: CadoraEvents[E]) => void): () => void;

@@ -7,6 +7,8 @@ import { dialog, ipcMain, shell, type BrowserWindow, type IpcMainEvent, type Ipc
 import { z } from 'zod';
 import type { AgentManager } from './agents';
 import type { AuthService } from './auth';
+import type { AuthBackend } from './auth-backend';
+import { CLIENT_ID_PATTERN } from './local-auth-server';
 import type { BrowserManager } from './browser';
 import { secretStoreAvailable } from './secrets';
 import type { TerminalManager } from './terminals';
@@ -39,6 +41,7 @@ export interface Services {
   agents: AgentManager;
   watcher: ProjectWatcher;
   auth: AuthService;
+  backend: AuthBackend;
   profileRoot: string;
   isAppUrl: (url: string) => boolean;
 }
@@ -92,6 +95,12 @@ export function registerIpc(s: Services): void {
   handle('team:openVerification', z.tuple([]), () => s.auth.openVerification());
   handle('team:me', z.tuple([]), () => s.auth.me());
   handle('team:logout', z.tuple([]), () => s.auth.logout());
+  // 데모: 가입 마무리와 앱 안 임시 서버의 GitHub 연결 설정
+  handle('team:completeSignup', z.tuple([z.string().trim().min(1).max(40)]), ([name]) => s.auth.updateProfile(name));
+  handle('team:setGithubClientId', z.tuple([z.string().regex(CLIENT_ID_PATTERN)]), async ([clientId]) => {
+    const r = await s.backend.setClientId(clientId);
+    return { authServer: r.url, authServerState: r.state };
+  });
 
   // 워크스페이스
   handle('workspace:list', z.tuple([]), () => s.workspaces.list());

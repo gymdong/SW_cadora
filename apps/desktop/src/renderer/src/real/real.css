@@ -63,15 +63,53 @@
 .merr { color: var(--red); font-size: 12.5px; margin-top: 8px; }
 .mrow { display: flex; justify-content: flex-end; gap: 6px; margin-top: 18px; }
 
-/* Cadora 계정(GitHub Device Flow) */
-.racct { display: flex; align-items: center; gap: 10px; margin: 2px 8px 2px; padding: 8px 10px; border-radius: 8px; background: rgba(255, 255, 255, .05); color: var(--side-text); }
-.racct.col { flex-direction: column; align-items: flex-start; gap: 6px; }
-.racct .grow { min-width: 0; }
-.racct .nm { display: block; font-size: 14px; font-weight: 700; color: #e6edf3; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.racct .mt { display: block; font-size: 11.5px; color: var(--side-mute); line-height: 1.45; }
-.racct-av { width: 28px; height: 28px; flex: none; border-radius: 50%; overflow: hidden; display: grid; place-items: center; background: rgba(45, 212, 191, .2); color: #ccfbf1; font-size: 13px; font-weight: 800; }
-.racct-av img { width: 100%; height: 100%; object-fit: cover; }
-.racct-login { margin-top: 4px; }
-.racct-note { padding: 4px 18px 0; color: #f0b072; }
+/* 로그인 코드 */
 .rcode { margin: 16px 0 12px; padding: 14px; border-radius: 10px; border: 1px solid #dfe3e8; background: #f6f8fa; text-align: center; font: 800 30px/1.2 Consolas, "Cascadia Mono", ui-monospace, monospace; letter-spacing: 4px; color: #1f2328; user-select: all; }
 .ld-dot { display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--accent); animation: rpulse 1s infinite; vertical-align: 1px; }
+
+/* 로그인 · 회원가입 화면 */
+.auth-page { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 24px; overflow: auto; background: radial-gradient(1100px 560px at 15% -10%, #134e48 0%, #0d1117 60%); }
+.auth-card { width: min(440px, 100%); background: #fff; color: var(--text); border-radius: 16px; padding: 28px 30px 20px; box-shadow: 0 30px 80px rgba(0, 0, 0, .45); }
+.auth-card.wide { width: min(580px, 100%); }
+.auth-card.center { text-align: center; }
+.auth-brand { font-weight: 900; letter-spacing: .1em; font-size: 15px; color: var(--accent-600); }
+.auth-h { font-size: 21px; margin: 10px 0 2px; }
+.auth-lead { color: var(--text-2); font-size: 13.5px; margin-top: 8px; line-height: 1.6; }
+.auth-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin: 18px 0 16px; border-radius: 10px; background: #f1f3f5; }
+.auth-tabs button { height: 34px; border: 0; border-radius: 8px; background: none; font-size: 14px; font-weight: 700; color: var(--text-2); }
+.auth-tabs button.on { background: #fff; color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.auth-step { font-size: 14px; line-height: 1.65; }
+.auth-steps { margin: 10px 0 0 20px; font-size: 13px; line-height: 1.85; color: var(--text-2); }
+.auth-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+.btn.big { height: 40px; justify-content: center; font-size: 14.5px; }
+.auth-setup b { font-size: 14.5px; }
+.auth-setup p { margin: 6px 0; font-size: 13px; line-height: 1.6; color: var(--text-2); }
+.auth-setup ol { margin: 0 0 12px 20px; font-size: 12.5px; line-height: 1.75; color: var(--text-2); }
+.auth-foot { display: flex; flex-direction: column; align-items: center; gap: 6px; margin-top: 20px; padding-top: 12px; border-top: 1px solid #eee; }
+.linkish { border: 0; background: none; padding: 2px; font-size: 12.5px; color: var(--text-2); text-decoration: underline; }
+.auth-server { font-size: 11.5px; line-height: 1.5; text-align: center; color: var(--text-3); }
+.su-who { display: flex; align-items: center; gap: 12px; margin: 16px 0 4px; padding: 10px 12px; border-radius: 10px; background: #f6f8fa; }
+.su-who b { display: block; font-size: 14.5px; }
+.su-who span { font-size: 12px; color: var(--text-3); }
+.su-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.su-two div { padding: 10px 12px; border: 1px solid #e6e8eb; border-radius: 10px; font-size: 12.5px; line-height: 1.6; color: var(--text-2); }
+.su-two b { display: block; margin-bottom: 4px; font-size: 13px; color: var(--text); }
+.su-agree { display: flex; align-items: center; gap: 8px; margin-top: 14px; font-size: 13.5px; }
+.ravatar { overflow: hidden; background: #0d9488; }
+.ravatar img { width: 100%; height: 100%; object-fit: cover; }
+
+/* 실제 모드 화면 */
+.top-user { font-size: 12.5px; color: rgba(255, 255, 255, .8); }
+.rmenu { left: 84px; bottom: 18px; }
+.rmenu-who { display: flex; align-items: center; gap: 10px; padding: 6px 8px 10px; }
+.rmenu-who b { display: block; }
+.rmenu-who span { font-size: 12px; color: var(--text-3); }
+.rwelcome { width: 100%; max-width: 780px; margin: 48px auto; padding: 0 28px; }
+.rwelcome h1 { font-size: 24px; }
+.rwelcome p { margin: 8px 0 18px; line-height: 1.6; color: var(--text-2); }
+.rwelcome-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
+.rwelcome-steps div { padding: 14px; border: 1px solid #e6e8eb; border-radius: 12px; font-size: 13px; line-height: 1.6; color: var(--text-2); }
+.rwelcome-steps b { display: block; margin-bottom: 4px; color: var(--text); }
+.rempty p { margin: 6px 0; }
+.rempty-actions { display: flex; gap: 8px; margin: 18px 0 10px; }
+.rsim-banner { position: fixed; right: 16px; bottom: 16px; z-index: 40; display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; border-radius: 10px; background: #1f2328; color: #fff; font-size: 13px; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); }

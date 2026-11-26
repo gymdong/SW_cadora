@@ -30,6 +30,8 @@ export interface AuthView {
   pending: LoginStart | null;
   message: string | null;
   busy: boolean;
+  /** "로그인 없이 이 PC 기능만 쓰기"를 골랐는지(앱을 다시 켜면 로그인 화면부터 보여 준다). */
+  skipped: boolean;
 }
 
 export interface RealState {
@@ -52,7 +54,7 @@ const api: CadoraBridge | undefined = (window as unknown as { cadora?: CadoraBri
 const hasFullApi = !!api && typeof api.workspace === 'object';
 
 const state: RealState = {
-  auth: { status: 'checking', me: null, pending: null, message: null, busy: false },
+  auth: { status: 'checking', me: null, pending: null, message: null, busy: false, skipped: false },
   available: hasFullApi,
   info: null,
   workspaces: [],
@@ -457,7 +459,39 @@ const real = {
     state.auth.status = 'logged_out';
     changed();
   },
-  retryAccount: () => refreshMe(),
+  skipLogin() {
+    state.auth.skipped = true;
+    state.auth.message = null;
+    changed();
+  },
+  unskip() {
+    state.auth.skipped = false;
+    state.auth.message = null;
+    changed();
+  },
+  clearAuthMessage() {
+    state.auth.message = null;
+    changed();
+  },
+  /** 가입 마무리: 팀에 보일 이름을 정한다(데모 확장 PATCH /me). */
+  async completeSignup(displayName: string): Promise<Me | undefined> {
+    if (!api) return undefined;
+    const me = await guard(api.team.completeSignup(displayName));
+    if (me) state.auth.me = me;
+    changed();
+    return me;
+  },
+  /** 앱 안 임시 서버에 쓸 GitHub OAuth App Client ID(비밀값 아님)를 저장한다. */
+  async setClientId(clientId: string): Promise<boolean> {
+    if (!api) return false;
+    const r = await guard(api.team.setGithubClientId(clientId));
+    if (r && state.info) {
+      state.info.authServer = r.authServer;
+      state.info.authServerState = r.authServerState;
+    }
+    changed();
+    return !!r;
+  },
 };
 
 (window as unknown as { CadoraReal: typeof real }).CadoraReal = real;
