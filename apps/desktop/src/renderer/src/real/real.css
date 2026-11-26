@@ -127,3 +127,5 @@ button.chip:hover { background: #e9ecef; }
 .top-user { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rmenu-who b { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .linkish:disabled { opacity: .45; cursor: not-allowed; }
+/* 터미널: 남는 아래쪽 몇 픽셀과 스크롤바가 검은 띠처럼 보이지 않게 배경을 맞추고 스크롤바를 얇게 한다 */
+.real-term .xterm-viewport { background-color: #14171b !important; scrollbar-width: thin; scrollbar-color: #3a4048 #14171b; }
