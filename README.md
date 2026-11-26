@@ -121,7 +121,7 @@ npm run dev
 
 ### npm 스크립트 규약
 
-CI/CD는 아래 스크립트 이름을 기준으로 동작합니다. 스크립트가 없으면 해당 단계는 건너뜁니다.
+CI/CD는 아래 스크립트 이름을 기준으로 동작합니다. 스크립트가 없거나 실패하면 CI가 실패합니다.
 
 | 스크립트 | 용도 | 사용처 |
 |---|---|---|
@@ -131,7 +131,7 @@ CI/CD는 아래 스크립트 이름을 기준으로 동작합니다. 스크립�
 | `build` | 앱 번들 빌드 | CI |
 | `dist` | electron-builder 패키징, 결과물은 `release/` | CD |
 
-electron-builder 설정에 `directories.output: "release"`를 지정하세요.
+설치 파일은 저장소 루트 `release/`에 만듭니다(`apps/desktop/electron-builder.yml`의 `directories.output: ../../release`).
 
 ## 협업 규칙
 
@@ -190,7 +190,7 @@ release: v0.1.0                      # dev → main
 | [`pr-lint.yml`](.github/workflows/pr-lint.yml) | PR 생성·수정 | PR 제목 Conventional Commits 검사(`pr-title`), `main` PR 출처 검사(`source-branch`) |
 | [`auto-merge.yml`](.github/workflows/auto-merge.yml) | `dev` PR 생성·Draft 전환 | Draft가 아닌 PR에 auto-merge(squash) 활성화, Draft 전환 시 해제. Dependabot은 patch/minor만 |
 | [`discord-notify.yml`](.github/workflows/discord-notify.yml) | PR 열림·머지·닫힘, CI 실패 | Discord 채널로 알림 (`DISCORD_WEBHOOK_URL` 필요) |
-| [`cd.yml`](.github/workflows/cd.yml) | `main` push, `v*` 태그 | Windows 설치 파일 빌드 → Actions artifact 업로드. 태그면 GitHub Release(draft) 생성 |
+| [`cd.yml`](.github/workflows/cd.yml) | `main` push, `v*` 태그, 수동 실행(`workflow_dispatch`) | Windows 설치 파일 빌드 → Actions artifact 업로드. 태그면 GitHub Release(draft) 생성 |
 
 > 자동 머지는 `GITHUB_TOKEN`으로 이루어져 `dev` push CI와 "머지됨" Discord 알림을 트리거하지 않습니다. `main` 병합은 사람이 하므로 CD·알림이 정상 동작합니다.
 
