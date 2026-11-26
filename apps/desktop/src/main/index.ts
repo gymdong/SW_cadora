@@ -55,6 +55,8 @@ function createMainWindow(): BrowserWindow {
       nodeIntegration: false,
       sandbox: true,
       spellcheck: false,
+      // 창이 가려져 있어도(브라우저에서 GitHub 승인 중) 로그인·에이전트 상태를 바로 반영한다.
+      backgroundThrottling: false,
     },
   });
 

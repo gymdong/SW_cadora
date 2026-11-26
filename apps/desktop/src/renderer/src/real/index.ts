@@ -72,10 +72,14 @@ let scheduled = false;
 function changed(): void {
   if (scheduled) return;
   scheduled = true;
-  requestAnimationFrame(() => {
+  const flush = () => {
+    if (!scheduled) return;
     scheduled = false;
     for (const l of listeners) l();
-  });
+  };
+  requestAnimationFrame(flush);
+  // 창이 다른 창에 가려지면 requestAnimationFrame이 멈춘다(예: GitHub 승인하러 브라우저로 간 동안). 타이머로도 갱신한다.
+  setTimeout(flush, 120);
 }
 
 let toastFn: ((msg: string) => void) | null = null;
