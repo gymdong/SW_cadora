@@ -158,7 +158,10 @@ try {
   await c.evaluate(`window.CadoraReal.openTab('${B}', '${WEB}/download?ws=B')`);
   const fa = join(dirA, '자료', 'report.txt'), fb = join(dirB, '자료', 'report.txt');
   await waitFor(() => existsSync(fa) && existsSync(fb), 8000);
-  const dlEvents = await c.evaluate(`({ A: (window.CadoraReal.state.downloads['${A}'] || []).map(d => d.wsId + ':' + d.fileName), B: (window.CadoraReal.state.downloads['${B}'] || []).map(d => d.wsId + ':' + d.fileName) })`);
+  // 파일이 생긴 뒤 완료 이벤트가 조금 늦게 올 수 있어서 이벤트가 올 때까지 기다린다.
+  const dlExpr = `({ A: (window.CadoraReal.state.downloads['${A}'] || []).map(d => d.wsId + ':' + d.fileName), B: (window.CadoraReal.state.downloads['${B}'] || []).map(d => d.wsId + ':' + d.fileName) })`;
+  await waitFor(() => c.evaluate(dlExpr).then((v) => v.A.length > 0 && v.B.length > 0), 5000);
+  const dlEvents = await c.evaluate(dlExpr);
   check('다운로드가 각 워크스페이스 자료 폴더로', existsSync(fa) && existsSync(fb) && readFileSync(fa, 'utf8') === 'report-from-A' && readFileSync(fb, 'utf8') === 'report-from-B', { A: existsSync(fa), B: existsSync(fb) });
   check('완료 이벤트의 workspaceId', dlEvents.A.includes(`${A}:report.txt`) && dlEvents.B.includes(`${B}:report.txt`), dlEvents);
 
