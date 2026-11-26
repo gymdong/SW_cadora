@@ -305,6 +305,16 @@ const real = {
     lastSelected = selectedWsId;
     layout(selectedWsId);
   },
+  /** 터미널 화면에 지금 보이는 줄(xterm 버퍼). 출력 스트림이 아니라 그려진 결과라 상태 확인·점검에 쓴다. */
+  screenText(termId: string, lines = 40): string {
+    const x = xterms.get(termId);
+    if (!x) return '';
+    const b = x.term.buffer.active;
+    const end = b.baseY + x.term.rows;
+    const out: string[] = [];
+    for (let i = Math.max(0, end - lines); i < end; i++) out.push(b.getLine(i)?.translateToString(true) ?? '');
+    return out.join('\n');
+  },
   focusTerminal(wsId: string) {
     const id = state.activeTerm[wsId];
     if (id) xterms.get(id)?.term.focus();
