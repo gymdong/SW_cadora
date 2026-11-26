@@ -8,6 +8,8 @@ import { createServer } from 'node:http';
 import { join } from 'node:path';
 
 const [electronExe, appDir, workDir] = process.argv.slice(2);
+// --packaged: 설치판(win-unpacked) 실행 파일로 돌린다. 서버 주소 없이 켜면 "로그인 준비 중"이 보이는지도 확인한다.
+const packaged = process.argv.includes('--packaged');
 const WIN = process.platform === 'win32';
 const PORT = 9334;
 const CLIENT_ID = 'Ov23liE2EfakeClient';
@@ -72,9 +74,10 @@ const authPort = await auth.ready;
 const SERVER = `http://127.0.0.1:${authPort}/v1`;
 
 // ── 앱 실행과 CDP ──
-function launch() {
-  const args = [appDir, `--remote-debugging-port=${PORT}`];
+function launch({ server = true } = {}) {
+  const args = packaged ? [`--remote-debugging-port=${PORT}`] : [appDir, `--remote-debugging-port=${PORT}`];
   const env = { ...process.env, CADORA_USER_DATA_DIR: userData, CADORA_SERVER_URL: SERVER };
+  if (!server) delete env.CADORA_SERVER_URL;
   delete env.ELECTRON_RUN_AS_NODE;
   if (!WIN) args.push('--ozone-platform=headless');
   const child = spawn(electronExe, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -135,6 +138,8 @@ try {
   const info = await c.evaluate(`window.cadora.runtime.info()`);
   check('로그인 서버 주소(CADORA_SERVER_URL)', info?.authServer === SERVER, info?.authServer);
   check('로그인 전: "GitHub로 로그인" 버튼', await waitFor(() => c.evaluate(`!!document.querySelector('[data-act="real-login"]')`), 10000));
+  // 배포 빌드의 CSP가 아바타 같은 필요한 자원을 막지 않는지 본다(위반은 콘솔이 아니라 이 이벤트로만 잡힌다).
+  await c.evaluate(`window.__cspViolations = []; document.addEventListener('securitypolicyviolation', (e) => window.__cspViolations.push(e.violatedDirective + ' ' + e.blockedURI)); true`);
 
   await click(c, '[data-act="real-login"]');
   const code = await waitFor(() => c.evaluate(`document.querySelector('[data-real-code]')?.textContent || null`));
@@ -151,6 +156,10 @@ try {
   check('me()는 계약 필드만(토큰 없음)', me && Object.keys(me).sort().join(',') === 'avatarUrl,displayName,id,workspaces' && !JSON.stringify(me).includes('gho_'), me);
   const avatar = await c.evaluate(`document.querySelector('.racct-av img')?.getAttribute('src') || null`);
   check('아바타는 GitHub 아바타 주소만', typeof avatar === 'string' && avatar.startsWith('https://avatars.githubusercontent.com/'), avatar);
+  await sleep(1500);
+  const csp = await c.evaluate(`({ meta: document.querySelector('meta[http-equiv="Content-Security-Policy"]')?.content || null, violations: window.__cspViolations })`);
+  check('CSP가 아바타를 막지 않음(위반 0건)', Array.isArray(csp.violations) && csp.violations.length === 0, csp);
+  if (packaged) check('설치판 화면에 CSP 적용', typeof csp.meta === 'string' && csp.meta.includes("script-src 'self'"), csp.meta);
   const teamKeys = await c.evaluate(`Object.keys(window.cadora.team).sort().join(',')`);
   check('window.cadora.team에 토큰을 꺼내는 함수 없음', teamKeys === 'cancelLogin,login,logout,me,openVerification', teamKeys);
 
@@ -196,6 +205,21 @@ try {
   check('실행 중 예외(2회차)', false, String(e?.stack || e).slice(0, 600));
 }
 await closeApp(app, c);
+
+if (packaged) {
+  // 설치판을 서버 주소 없이 켜면 로그인 버튼 대신 "로그인 준비 중"을 보여 준다(팀원용 배포).
+  app = launch({ server: false });
+  c = null;
+  try {
+    c = await connect(isApp);
+    const note = await waitFor(() => c.evaluate(`document.querySelector('[data-real-account="no-server"]')?.textContent || null`), 15000);
+    const info = await c.evaluate(`window.cadora.runtime.info()`);
+    check('서버 주소 없는 설치판: "로그인 준비 중" 안내, 로그인 버튼 없음', typeof note === 'string' && note.includes('팀 서버') && info.authServerState === 'not_configured' && !(await c.evaluate(`!!document.querySelector('[data-act="real-login"]')`)), { note, state: info.authServerState });
+  } catch (e) {
+    check('실행 중 예외(서버 없음)', false, String(e?.stack || e).slice(0, 400));
+  }
+  await closeApp(app, c);
+}
 auth.child.kill();
 fakeGithub.close();
 

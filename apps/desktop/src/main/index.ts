@@ -2,7 +2,7 @@ import { app, BrowserWindow, session, shell } from 'electron';
 import { isAbsolute, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { AgentManager } from './agents';
-import { AuthService, parseServerUrl } from './auth';
+import { AuthService, DEFAULT_SERVER_URL, parseServerUrl } from './auth';
 import { authStore } from './auth-store';
 import { BrowserManager } from './browser';
 import { emit, setEventTarget } from './events';
@@ -19,6 +19,23 @@ app.enableSandbox();
 // 테스트·시연용: 데이터 폴더를 따로 지정하면 한 PC에서 "기기 두 대"처럼 따로 띄울 수 있다(절대경로만).
 const userDataOverride = process.env['CADORA_USER_DATA_DIR'];
 if (userDataOverride && isAbsolute(userDataOverride)) app.setPath('userData', userDataOverride);
+
+// 같은 데이터 폴더로 두 번 켜지 않는다(워크스페이스 JSON·로그인 정보를 두 프로세스가 동시에 쓰지 않게). 두 번째 실행은 기존 창을 앞으로 가져온다.
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0);
+}
+app.on('second-instance', () => {
+  const win = BrowserWindow.getAllWindows()[0];
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+});
+
+// Cadora 서버 주소: CADORA_SERVER_URL > 설치판은 빌드 때 넣은 주소(없으면 "준비 전") > 개발 모드는 http://localhost:4000/v1.
+declare const __CADORA_BUILD_SERVER_URL__: string;
+const configuredServer = process.env['CADORA_SERVER_URL'] ?? (app.isPackaged ? __CADORA_BUILD_SERVER_URL__ : DEFAULT_SERVER_URL);
+const serverUrl = configuredServer ? parseServerUrl(configuredServer) : null;
+const serverState = !configuredServer ? 'not_configured' : serverUrl ? 'configured' : 'invalid';
 
 const devServerUrl = process.env['ELECTRON_RENDERER_URL'];
 const rendererFileUrl = pathToFileURL(join(__dirname, '../renderer/index.html')).href;
@@ -103,7 +120,8 @@ void app.whenReady().then(async () => {
   // Cadora 계정: CADORA_SERVER_URL(기본 http://localhost:4000/v1)의 GitHub Device Flow. refresh token은 safeStorage로 암호화해 둔다.
   const store = authStore(join(app.getPath('userData'), 'auth.json'));
   const auth = new AuthService({
-    serverUrl: parseServerUrl(process.env['CADORA_SERVER_URL']),
+    serverUrl,
+    serverState,
     loadRefreshToken: () => store.load(),
     saveRefreshToken: (token) => store.save(token),
     openExternal: (url) => shell.openExternal(url),

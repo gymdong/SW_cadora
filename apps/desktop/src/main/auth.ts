@@ -90,9 +90,13 @@ function errorOf(data: unknown): { code?: string; message?: string; details?: Re
 /** 요청이 서버에 닿지 않은 연결 오류(이때는 refresh token이 그대로 유효하다). */
 const NOT_SENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
 
+export type ServerState = 'configured' | 'not_configured' | 'invalid';
+
 export interface AuthDeps {
-  /** parseServerUrl 결과. null이면 로그인하지 않고 설정 오류를 알린다. */
+  /** parseServerUrl 결과. null이면 로그인하지 않고 serverState에 맞는 안내를 낸다. */
   serverUrl: string | null;
+  /** not_configured: 설치판에 팀 서버 주소가 아직 없음. invalid: 주소가 https·loopback 규칙에 맞지 않음. */
+  serverState?: ServerState;
   loadRefreshToken(): Promise<string | null>;
   /** null이면 지운다. 암호화를 쓸 수 없으면 throw한다(그러면 앱이 켜져 있는 동안만 로그인이 유지된다). */
   saveRefreshToken(token: string | null): Promise<void>;
@@ -380,11 +384,16 @@ export class AuthService {
     if (!this.disposed) this.deps.onStatus(s, message);
   }
 
+  get serverState(): ServerState {
+    return this.deps.serverUrl ? 'configured' : (this.deps.serverState ?? 'invalid');
+  }
+
   private requireServer(): string {
-    if (!this.deps.serverUrl) {
-      throw new AuthError('config', 'CADORA_SERVER_URL이 올바르지 않아요. https 주소나 이 PC(localhost)의 http 주소만 쓸 수 있어요.');
+    if (this.deps.serverUrl) return this.deps.serverUrl;
+    if (this.serverState === 'not_configured') {
+      throw new AuthError('server_not_configured', '팀 서버가 아직 준비되지 않아 로그인할 수 없어요. 서버가 생기면 이 버전에서도 로그인을 켤 수 있어요.');
     }
-    return this.deps.serverUrl;
+    throw new AuthError('config', 'CADORA_SERVER_URL이 올바르지 않아요. https 주소나 이 PC(localhost)의 http 주소만 쓸 수 있어요.');
   }
 
   private replyError(r: Reply, fallback: string): AuthError {

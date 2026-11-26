@@ -178,6 +178,16 @@ describe('Device Flow 로그인', () => {
     await expect(down.auth.login()).rejects.toMatchObject({ code: 'server_unreachable', message: expect.stringContaining('127.0.0.1:4000') });
     const bad = setup({}, { serverUrl: null });
     await expect(bad.auth.login()).rejects.toMatchObject({ code: 'config' });
+    const none = new AuthService({
+      serverUrl: null,
+      serverState: 'not_configured',
+      loadRefreshToken: async () => null,
+      saveRefreshToken: async () => undefined,
+      openExternal: async () => undefined,
+      onStatus: () => undefined,
+    });
+    expect(none.serverState).toBe('not_configured');
+    await expect(none.login()).rejects.toMatchObject({ code: 'server_not_configured', message: expect.stringContaining('팀 서버') });
     const provider = setup({
       'POST /auth/github/device': () => ({ status: 503, body: { error: { code: 'provider_unavailable', message: 'Device Flow가 꺼져 있어요' } } }),
     });

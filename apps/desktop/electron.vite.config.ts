@@ -3,15 +3,20 @@ import react from '@vitejs/plugin-react';
 import type { Plugin } from 'vite';
 
 // 진입점은 electron-vite 기본값을 따른다: src/main/index.ts · src/preload/index.ts · src/renderer/index.html
-// 이 패키지는 dependencies를 비워 둔다. 그래야 main·preload가 쓰는 코드(@cadora/* 포함)가 모두 out/에 묶이고,
-// electron-builder가 워크스페이스 node_modules를 뒤지지 않는다. 네이티브 모듈(node-pty 등)을 넣을 때 다시 정한다(#20, #28).
+// dependencies에는 네이티브 모듈(node-pty, @parcel/watcher)만 둔다. electron-vite가 이것만 번들 밖에 두고,
+// electron-builder가 설치 파일에 넣어 asar 밖으로 푼다(electron-builder.yml asarUnpack). 나머지 코드는 out/에 묶인다.
+
+// 설치 파일(배포 빌드)이 기본으로 쓸 Cadora 서버 주소. 빌드할 때 CADORA_BUILD_SERVER_URL로 넣는다.
+// 비워 두면 설치판에서는 로그인을 "팀 서버 준비 전"으로 보여 준다(개발 모드 기본값은 http://localhost:4000/v1).
+const BUILD_SERVER_URL = process.env['CADORA_BUILD_SERVER_URL'] ?? '';
 
 // 앱 화면의 Content-Security-Policy. 개발 서버는 HMR용 인라인 스크립트를 쓰므로 배포 빌드에만 넣는다.
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "script-src 'self'",
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data:",
+  // 로그인한 GitHub 사용자의 아바타만 외부 이미지로 허용한다(main이 이 주소만 화면에 넘긴다).
+  "img-src 'self' data: https://avatars.githubusercontent.com",
   "font-src 'self' data:",
   "connect-src 'self'",
   "object-src 'none'",
@@ -34,7 +39,9 @@ function contentSecurityPolicy(): Plugin {
 }
 
 export default defineConfig({
-  main: {},
+  main: {
+    define: { __CADORA_BUILD_SERVER_URL__: JSON.stringify(BUILD_SERVER_URL) },
+  },
   preload: {},
   renderer: {
     plugins: [react(), contentSecurityPolicy()],

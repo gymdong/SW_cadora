@@ -8,6 +8,30 @@ directories:
 files:
   - out/**
 asar: true
+# node-pty·@parcel/watcher는 N-API 미리 빌드된 바이너리를 쓴다(스파이크 #20: Electron 45에서 그대로 동작). 소스 재빌드(컴파일러 필요)를 하지 않는다.
+npmRebuild: false
+# 네이티브 모듈은 asar 안에서 읽을 수 없어서 밖으로 푼다(node-pty의 conpty.dll·OpenConsole.exe 포함).
+asarUnpack:
+  - "**/node_modules/node-pty/**"
+  - "**/node_modules/@parcel/watcher/**"
+  - "**/node_modules/@parcel/watcher-*/**"
+# Claude Code hook이 실행하는 relay 스크립트(agents.ts가 resources/hook-relay.cjs로 찾는다).
+extraResources:
+  - from: resources/hook-relay.cjs
+    to: hook-relay.cjs
+# Electron fuses: 설치판 실행 파일의 위험한 기능을 끈다(https://www.electronjs.org/docs/latest/tutorial/fuses).
+electronFuses:
+  # 켜 둔다: PC에 Node가 없으면 hook relay를 Cadora 실행 파일의 내장 Node로 돌린다(agents.ts hookCommand).
+  runAsNode: true
+  # 내장 브라우저의 쿠키(구글·LMS 로그인 세션)를 디스크에 암호화해 둔다(Windows DPAPI).
+  enableCookieEncryption: true
+  # NODE_OPTIONS(--require 등)로 앱 안에 코드를 끼워 넣지 못하게 한다.
+  enableNodeOptionsEnvironmentVariable: false
+  # --inspect 같은 Node 디버거 인자로 main 프로세스에 붙지 못하게 한다.
+  enableNodeCliInspectArguments: false
+  # app.asar가 바뀌면 실행하지 않고, asar 밖의 앱 코드는 읽지 않는다.
+  enableEmbeddedAsarIntegrityValidation: true
+  onlyLoadAppFromAsar: true
 # 게시(publish) 설정을 끈다. 업데이트 정보 파일(latest.yml)도 만들지 않는다.
 # 이 줄이 없으면 CD의 GH_TOKEN을 보고 GitHub 게시로 자동 판단하는데, 모노레포라 apps/desktop에서
 # 저장소를 찾지 못해 빌드가 실패한다(electron-builder 26.18: "Cannot read properties of null (reading 'channel')").
@@ -17,7 +41,8 @@ win:
   target:
     - target: nsis
       arch: [x64]
-  artifactName: ${productName}-Setup-${version}.${ext}
+  # 데모 브랜치 빌드라는 걸 파일 이름에 드러낸다.
+  artifactName: ${productName}-Demo-Setup-${version}.${ext}
 nsis:
   oneClick: false
   perMachine: false

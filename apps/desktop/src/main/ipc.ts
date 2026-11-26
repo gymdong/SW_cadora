@@ -83,6 +83,7 @@ export function registerIpc(s: Services): void {
     watcher: '@parcel/watcher',
     secretStore: await secretStoreAvailable(),
     authServer: s.auth.server,
+    authServerState: s.auth.serverState,
   }));
 
   // Cadora 계정(API.md §1.1·§3). 토큰·기기 코드는 돌려주지 않는다.

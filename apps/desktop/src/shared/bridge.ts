@@ -105,8 +105,10 @@ export interface RuntimeInfo {
   watcher: '@parcel/watcher';
   /** 비밀값 저장소(safeStorage)를 쓸 수 있는지(Windows는 DPAPI). */
   secretStore: boolean;
-  /** 로그인에 쓰는 Cadora 서버 주소(CADORA_SERVER_URL, 기본 http://localhost:4000/v1). 올바르지 않으면 null. */
+  /** 로그인에 쓰는 Cadora 서버 주소(CADORA_SERVER_URL, 기본 http://localhost:4000/v1). 없거나 올바르지 않으면 null. */
   authServer: string | null;
+  /** not_configured: 설치판에 팀 서버 주소가 아직 없음(로그인 "준비 전"). invalid: 주소 설정 오류. */
+  authServerState: 'configured' | 'not_configured' | 'invalid';
 }
 
 /** 로그인 상태(API.md §3 "team:authChanged"). */

@@ -691,6 +691,14 @@
         <span class="grow"><span class="nm">${esc(me.displayName)}</span><span class="mt">GitHub로 로그인됨</span></span>
         <button class="btn sm" data-act="real-account-logout">로그아웃</button></div>`;
     }
+    const srvState = R.state.info && R.state.info.authServerState;
+    if (srvState === 'not_configured') {
+      return `${head}<div class="racct col" data-real-account="no-server"><span class="nm">로그인 준비 중</span>
+        <span class="mt">팀 서버가 아직 없어서 이 버전에서는 로그인을 쓸 수 없어요. 이 PC의 워크스페이스 · 브라우저 · 터미널은 그대로 쓸 수 있어요.</span></div>`;
+    }
+    if (srvState === 'invalid') {
+      return `${head}<div class="racct col" data-real-account="bad-server"><span class="mt">서버 주소(CADORA_SERVER_URL) 설정이 올바르지 않아요. https 주소나 이 PC(localhost)의 http 주소만 쓸 수 있어요.</span></div>`;
+    }
     if (A.status === 'checking' || A.status === 'authenticated') return `${head}<div class="racct"><span class="mt">계정 확인 중…</span></div>`;
     if (A.status === 'offline') {
       return `${head}<div class="racct col" data-real-account="offline"><span class="mt">${esc(A.message || 'Cadora 서버에 연결할 수 없어요.')}</span>
