@@ -33,6 +33,13 @@ export default defineConfig(
     languageOptions: { globals: globals.node },
   },
 
+  // 데모 E2E 스크립트: Windows Node에서 앱을 띄워 CDP로 조작한다
+  {
+    files: ['apps/desktop/e2e/**/*.mjs'],
+    languageOptions: { globals: globals.node },
+    rules: { 'no-empty': ['error', { allowEmptyCatch: true }] },
+  },
+
   // Claude Code hook이 plain node로 실행하는 CommonJS 스크립트(번들하지 않는다)
   {
     files: ['apps/desktop/resources/**/*.cjs'],
