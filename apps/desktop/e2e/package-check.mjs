@@ -14,7 +14,9 @@ import { homedir, userInfo } from 'node:os';
 import { join } from 'node:path';
 
 const require = createRequire(import.meta.url);
-const { getCurrentFuseWire, FuseV1Options, FuseState } = require('@electron/fuses');
+const { getCurrentFuseWire, FuseV1Options } = require('@electron/fuses');
+// @electron/fuses 1.8은 FuseState를 최상위에서 내보내지 않는다: '1'(49)=켜짐, '0'(48)=꺼짐.
+const FuseState = { ENABLE: 49, DISABLE: 48 };
 const asar = require('@electron/asar');
 
 const [releaseDir, workDir] = process.argv.slice(2);
