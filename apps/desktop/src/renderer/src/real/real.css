@@ -90,7 +90,7 @@
 .auth-server { font-size: 12.5px; line-height: 1.5; text-align: center; color: var(--text-3); }
 .su-who { display: flex; align-items: center; gap: 12px; margin: 16px 0 4px; padding: 10px 12px; border-radius: 10px; background: #f6f8fa; }
 .su-who b { display: block; font-size: 16px; }
-.su-who span { font-size: 13px; color: var(--text-3); }
+.su-who div span { font-size: 13px; color: var(--text-3); }
 .su-two { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
 .su-two div { padding: 10px 12px; border: 1px solid #e6e8eb; border-radius: 10px; font-size: 14px; line-height: 1.6; color: var(--text-2); }
 .su-two b { display: block; margin-bottom: 4px; font-size: 14.5px; color: var(--text); }
@@ -103,7 +103,7 @@
 .rmenu { left: 84px; bottom: 18px; }
 .rmenu-who { display: flex; align-items: center; gap: 10px; padding: 6px 8px 10px; }
 .rmenu-who b { display: block; }
-.rmenu-who span { font-size: 13px; color: var(--text-3); }
+.rmenu-who div span { font-size: 13px; color: var(--text-3); }
 .rwelcome { width: 100%; max-width: 780px; margin: 48px auto; padding: 0 28px; }
 .rwelcome h1 { font-size: 26.5px; }
 .rwelcome p { margin: 8px 0 18px; line-height: 1.6; color: var(--text-2); }
@@ -113,3 +113,17 @@
 .rempty p { margin: 6px 0; }
 .rempty-actions { display: flex; gap: 8px; margin: 18px 0 10px; }
 .rsim-banner { position: fixed; right: 16px; bottom: 16px; z-index: 40; display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; border-radius: 10px; background: #1f2328; color: #fff; font-size: 14.5px; box-shadow: 0 8px 24px rgba(0, 0, 0, .3); }
+
+/* 가독성: 한글은 단어 단위로 줄을 바꾼다(아주 긴 영문·경로만 중간에서 끊는다) */
+body { word-break: keep-all; overflow-wrap: anywhere; }
+.ravatar { font-size: 15px; color: #fff; }
+button.chip { border: 0; cursor: pointer; font: inherit; font-size: 14px; }
+button.chip:hover { background: #e9ecef; }
+.chips .chip { max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+.real-term .xterm-viewport { overflow-x: hidden; }
+/* 실제 모드에서는 모든 것이 실제라 "실제" 표시를 숨긴다(시연 화면에서만 구분용으로 쓴다) */
+[data-real-shell] .rtag.real { display: none; }
+.me-label { max-width: 70px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; word-break: normal; }
+.top-user { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rmenu-who b { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.linkish:disabled { opacity: .45; cursor: not-allowed; }

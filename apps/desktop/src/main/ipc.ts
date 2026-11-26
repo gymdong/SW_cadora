@@ -87,6 +87,8 @@ export function registerIpc(s: Services): void {
     secretStore: await secretStoreAvailable(),
     authServer: s.auth.server,
     authServerState: s.auth.serverState,
+    authServerError: s.backend.lastError,
+    clientIdSource: s.backend.clientIdSource,
   }));
 
   // Cadora 계정(API.md §1.1·§3). 토큰·기기 코드는 돌려주지 않는다.
@@ -99,7 +101,7 @@ export function registerIpc(s: Services): void {
   handle('team:completeSignup', z.tuple([z.string().trim().min(1).max(40)]), ([name]) => s.auth.updateProfile(name));
   handle('team:setGithubClientId', z.tuple([z.string().regex(CLIENT_ID_PATTERN)]), async ([clientId]) => {
     const r = await s.backend.setClientId(clientId);
-    return { authServer: r.url, authServerState: r.state };
+    return { authServer: r.url, authServerState: r.state, clientIdSource: s.backend.clientIdSource };
   });
 
   // 워크스페이스

@@ -701,13 +701,25 @@
   function realAuthBody() {
     const A = R.state.auth, info = R.state.info || {}, tab = ui.authTab || 'login';
     if (info.authServerState === 'invalid') return '<div class="merr">서버 주소(CADORA_SERVER_URL) 설정이 올바르지 않아요. https 주소나 이 PC(localhost)의 http 주소만 쓸 수 있어요.</div>';
-    if (info.authServerState === 'needs_client_id') {
+    const canReconfigure = info.clientIdSource !== 'env' && info.clientIdSource !== 'build';
+    if (info.authServerState === 'unavailable' && !ui.showSetup) {
+      return `<div class="merr" data-real-auth-error>${esc(info.authServerError || '로그인 서버를 켜지 못했어요.')}</div>
+        ${canReconfigure ? '<div class="auth-actions"><button class="btn big" data-act="real-setup-open">GitHub 연결 다시 설정</button></div>' : ''}`;
+    }
+    if (info.authServerState === 'needs_client_id' || info.authServerState === 'unavailable' || (ui.showSetup && canReconfigure)) {
       return `<div class="auth-setup" data-real-setup>
         <b>GitHub 연결 설정이 한 번 필요해요</b>
         <p>로그인은 GitHub 계정으로 해요. 팀 서버가 생기기 전까지는 이 앱 안의 임시 서버가 GitHub에 직접 물어보는데, 그러려면 GitHub OAuth App의 <b>Client ID</b>가 필요해요. 비밀값이 아니에요.</p>
         <ol><li>GitHub → Settings → Developer settings → OAuth Apps → New OAuth App</li><li>Homepage URL은 저장소 주소, Authorization callback URL은 http://localhost</li><li><b>Enable Device Flow</b>를 켜고 Register application</li><li>나온 Client ID를 아래에 붙여 넣기</li></ol>
-        <div class="field-row"><input id="r-client-id" data-input="real-client-id" data-enter="real-client-id-save" placeholder="예: Ov23li…" autocomplete="off" spellcheck="false" value="${esc(ui.clientIdInput || '')}"><button class="btn primary" data-act="real-client-id-save">저장</button></div>
+        <div class="field-row"><input id="r-client-id" data-input="real-client-id" data-enter="real-client-id-save" placeholder="예: Ov23li…" autocomplete="off" spellcheck="false" value="${esc(ui.clientIdInput || '')}"><button class="btn primary" data-act="real-client-id-save" ${ui.cidBusy ? 'disabled' : ''}>${ui.cidBusy ? '저장 중…' : '저장'}</button></div>
+        <div class="rnote">Client secret은 넣지 마세요. 필요 없고, 넣으면 저장하지 않아요.</div>
+        ${ui.showSetup && info.authServerState === 'local' ? '<div class="auth-actions"><button class="linkish" data-act="real-setup-close">취소</button></div>' : ''}
       </div>`;
+    }
+    if (A.status === 'offline') {
+      return `<div class="merr" data-real-auth-error>${esc(A.message || '서버에 연결할 수 없어요.')}</div>
+        <div class="auth-step">이 PC에 저장된 로그인이 있어요. 서버가 다시 켜지면 그대로 이어서 쓸 수 있어요.</div>
+        <div class="auth-actions"><button class="btn primary big" data-act="real-account-retry">다시 시도</button><button class="btn big" data-act="real-auth-start">GitHub로 새로 로그인</button></div>`;
     }
     const msg = A.message ? `<div class="merr" data-real-auth-error>${esc(A.message)}</div>` : '';
     const p = A.pending;
@@ -724,8 +736,9 @@
         <ol class="auth-steps"><li>GitHub에서 코드 승인</li><li>팀에 보일 이름 정하기</li><li>빈 작업공간에서 시작</li></ol>
         <div class="auth-actions"><button class="btn primary big" data-act="real-auth-start">GitHub로 가입하기</button></div>`;
     }
+    const fix = A.message && info.authServerState === 'local' && canReconfigure ? '<button class="linkish" data-act="real-setup-open">GitHub 연결 다시 설정</button>' : '';
     return `${msg}<div class="auth-step">GitHub 계정으로 로그인해요. 처음이면 로그인하면서 가입도 함께 돼요.</div>
-      <div class="auth-actions"><button class="btn primary big" data-act="real-auth-start">GitHub로 로그인</button></div>`;
+      <div class="auth-actions"><button class="btn primary big" data-act="real-auth-start">GitHub로 로그인</button>${fix}</div>`;
   }
 
   function realAuthHTML() {
@@ -736,13 +749,13 @@
       <div class="auth-lead">프로젝트마다 로그인 · 파일 · 실행 환경을 나누고, 팀의 AI 작업을 한눈에 봐요.</div>
       <div class="auth-tabs">${[['login', '로그인'], ['signup', '회원가입']].map(([k, l]) => `<button class="${tab === k ? 'on' : ''}" data-act="real-auth-tab" data-t="${k}" ${lock ? 'disabled' : ''}>${l}</button>`).join('')}</div>
       <div class="auth-body">${realAuthBody()}</div>
-      <div class="auth-foot"><button class="linkish" data-act="real-skip-login">로그인 없이 이 PC 기능만 쓰기</button><div class="auth-server">${realServerNote()}</div></div>
+      <div class="auth-foot"><button class="linkish" data-act="real-skip-login" ${R.state.auth.busy ? 'disabled' : ''}>로그인 없이 이 PC 기능만 쓰기</button><div class="auth-server">${realServerNote()}</div></div>
     </div></div>`;
   }
 
   function realSignupHTML() {
     const me = realMe();
-    if (ui.suName === undefined) ui.suName = me.displayName;
+    if (ui.suName === undefined) ui.suName = [...String(me.displayName)].slice(0, 40).join('');
     return `<div class="auth-page" data-real-page="signup"><div class="auth-card wide">
       <div class="auth-brand">CADORA</div>
       <h2 class="auth-h">가입을 마무리해요</h2>
@@ -754,7 +767,7 @@
         <div><b>공유하지 않아요</b>코드 · 프롬프트 원문 · 웹사이트 로그인 쿠키와 토큰 · 환경변수 값 · 내 PC의 폴더 경로</div></div>
       <label class="su-agree"><input type="checkbox" data-act="real-su-agree" ${ui.suAgree ? 'checked' : ''}> 위 내용을 확인했어요</label>
       ${ui.suErr ? `<div class="merr" data-real-signup-error>${esc(ui.suErr)}</div>` : ''}
-      <div class="mrow"><button class="btn" data-act="real-account-logout">다른 계정으로</button><button class="btn primary" data-act="real-signup-done" ${ui.suBusy ? 'disabled' : ''}>가입 완료</button></div>
+      <div class="mrow"><button class="btn" data-act="real-account-logout" title="다른 GitHub 계정으로 가입하려면 브라우저의 GitHub에서도 로그아웃하세요">취소하고 로그아웃</button><button class="btn primary" data-act="real-signup-done" ${ui.suBusy ? 'disabled' : ''}>${ui.suBusy ? '저장 중…' : '가입 완료'}</button></div>
     </div></div>`;
   }
 
@@ -835,6 +848,8 @@
   }
   const fmtClock = iso => { const d = new Date(iso); return `${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`; };
 
+  // 화면에는 폴더 이름만 보여 주고 전체 경로는 툴팁으로 둔다.
+  const lastSeg = p => String(p || '').split(/[\\/]/).filter(Boolean).pop() || String(p || '');
   function realHomePane() {
     const w = realWs(realSel);
     const RS = R.state;
@@ -843,9 +858,9 @@
     const head = `<div class="h-head">
       <div class="grow"><h1>${esc(w.name)} <span class="tagk">개인 · ${esc(w.type)}</span><span class="rtag real">이 PC에서 실제로 동작</span></h1>
         <div class="chips">
-          <button class="chip rfolder" data-act="real-folder" title="탐색기에서 열기 · ${esc(w.localPath)}">${ico('code', 13)}${esc(w.localPath)}</button>
-          <span class="chip" title="이 워크스페이스 전용 브라우저 세션">${ico('lock', 13)}${esc(w.partition)}</span>
-          <button class="chip" data-act="real-dl-folder" title="받은 파일 폴더 열기">${ico('dl', 13)}${esc(w.downloadDir)}</button></div></div>
+          <button class="chip rfolder" data-act="real-folder" title="탐색기에서 열기 · ${esc(w.localPath)}">${ico('code', 13)}${esc(lastSeg(w.localPath))} 폴더</button>
+          <span class="chip" title="이 워크스페이스 전용 브라우저 세션 · ${esc(w.partition)}">${ico('lock', 13)}전용 브라우저 세션</span>
+          <button class="chip" data-act="real-dl-folder" title="받은 파일 폴더 열기 · ${esc(w.downloadDir)}">${ico('dl', 13)}받은 파일(${esc(lastSeg(w.downloadDir))})</button></div></div>
       <div class="acts">
         ${sleeping ? '<button class="btn primary" data-act="real-wake">깨우기</button>' : `<button class="btn" data-act="real-sleep">${ico('moon', 15)}잠자기</button>`}
         <button class="btn" data-act="real-remove-open" title="워크스페이스 삭제 (폴더는 남겨요)">${ico('x', 15)}</button></div></div>`;
@@ -992,17 +1007,32 @@
     'real-view': d => { ui.view = d.v; ui.menu = null; },
     'real-auth-tab': d => { ui.authTab = d.t; R.clearAuthMessage(); },
     'real-auth-start': () => { R.login(); },
-    'real-auth-open': () => { R.openLoginPage().then(() => toast('코드를 복사했어요 — 열린 GitHub 페이지에 붙여 넣으세요')); },
+    'real-auth-open': () => {
+      R.openLoginPage().then(r => {
+        if (r.opened) toast(r.copied ? '코드를 복사했어요 — 열린 GitHub 페이지에 붙여 넣으세요' : 'GitHub 페이지를 열었어요 — 화면의 코드를 입력하세요');
+      });
+    },
     'real-auth-cancel': () => { R.cancelLogin(); },
     'real-client-id-save': () => {
+      if (ui.cidBusy) return;
       const v = String(ui.clientIdInput || '').trim();
+      if (/^[0-9a-f]{40}$/i.test(v)) { toast('Client secret 같아요. secret이 아니라 Client ID를 넣어 주세요'); return; }
       if (!/^[A-Za-z0-9._-]{8,64}$/.test(v)) { toast('Client ID 형식이 올바르지 않아요. GitHub OAuth App 화면의 Client ID를 그대로 붙여 넣어 주세요'); return; }
-      R.setClientId(v).then(ok => { if (ok) { ui.clientIdInput = ''; toast('GitHub 연결을 저장했어요 — 이제 로그인할 수 있어요'); } });
+      ui.cidBusy = true;
+      R.setClientId(v).then(ok => {
+        ui.cidBusy = false;
+        if (ok) { ui.clientIdInput = ''; ui.showSetup = false; toast('GitHub 연결을 저장했어요 — 이제 로그인할 수 있어요'); }
+        render();
+      });
     },
+    'real-setup-open': () => { ui.showSetup = true; R.clearAuthMessage(); },
+    'real-setup-close': () => { ui.showSetup = false; },
+    'real-account-retry': () => { R.retryAccount(); },
     'real-skip-login': () => { R.skipLogin(); ui.view = 'home'; },
     'real-login-from-app': () => { ui.menu = null; ui.modal = null; R.unskip(); },
     'real-su-agree': (d, t) => { ui.suAgree = !!t.checked; ui.suErr = null; },
     'real-signup-done': () => {
+      if (ui.suBusy) return;
       const name = String(ui.suName || '').trim();
       if (!name) { ui.suErr = '이름을 적어 주세요'; return; }
       if (!ui.suAgree) { ui.suErr = '공유되는 것과 공유하지 않는 것을 확인했다고 체크해 주세요'; return; }
@@ -1014,7 +1044,7 @@
       });
     },
     'real-account-logout': () => { ui.menu = null; ui.suName = undefined; ui.suAgree = false; ui.suErr = null; R.logoutAccount().then(() => toast('로그아웃했어요 — 이 PC에 저장된 로그인 정보도 지웠어요')); },
-    'real-sim-on': () => { ui.simMode = true; ui.menu = null; ui.view = 'home'; },
+    'real-sim-on': () => { ui.simMode = true; ui.menu = null; ui.view = 'home'; realSel = null; },
     'real-sim-off': () => { ui.simMode = false; ui.menu = null; ui.view = 'home'; },
     'real-env-add': () => {
       const n = document.getElementById('real-env-name'), v = document.getElementById('real-env-value');

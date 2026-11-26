@@ -252,7 +252,10 @@ if (api && hasFullApi) {
     A.status = status;
     A.message = message ?? null;
     if (status !== 'pending') A.pending = null;
-    if (status === 'authenticated') void refreshMe();
+    if (status === 'authenticated') {
+      A.skipped = false;
+      void refreshMe();
+    }
     else if (status !== 'pending') A.me = null;
     changed();
   });
@@ -266,7 +269,13 @@ if (api && hasFullApi) {
       void refreshMe();
     } catch (err) {
       if (attempt < 5) setTimeout(() => void init(attempt + 1), 300 * (attempt + 1));
-      else report(err);
+      else {
+        report(err);
+        // 계정 확인 화면에서 멈추지 않게: 다시 시도할 수 있는 상태로 둔다.
+        state.auth.status = 'offline';
+        state.auth.message = `앱을 준비하지 못했어요: ${errText(err)}`;
+        changed();
+      }
     }
   };
   void init(0);
@@ -445,11 +454,13 @@ const real = {
       changed();
     }
   },
-  async openLoginPage() {
-    if (!api) return;
+  /** 코드를 복사하고 GitHub 페이지를 연다. 결과: 복사·열기 각각 성공했는지. */
+  async openLoginPage(): Promise<{ copied: boolean; opened: boolean }> {
+    if (!api) return { copied: false, opened: false };
     const code = state.auth.pending?.userCode;
-    if (code) await navigator.clipboard.writeText(code).catch(() => undefined);
-    await guard(api.team.openVerification());
+    const copied = !!code && (await navigator.clipboard.writeText(code).then(() => true, () => false));
+    const opened = (await guard(api.team.openVerification().then(() => true))) === true;
+    return { copied, opened };
   },
   cancelLogin: () => api && guard(api.team.cancelLogin()),
   async logoutAccount() {
@@ -460,9 +471,18 @@ const real = {
     changed();
   },
   skipLogin() {
+    if (state.auth.pending && api) void api.team.cancelLogin().catch(() => undefined);
+    state.auth.pending = null;
     state.auth.skipped = true;
     state.auth.message = null;
     changed();
+  },
+  /** 저장된 로그인을 다시 확인한다(서버가 다시 켜졌을 때). */
+  async retryAccount() {
+    state.auth.status = 'checking';
+    state.auth.message = null;
+    changed();
+    await refreshMe();
   },
   unskip() {
     state.auth.skipped = false;
@@ -488,6 +508,13 @@ const real = {
     if (r && state.info) {
       state.info.authServer = r.authServer;
       state.info.authServerState = r.authServerState;
+      state.info.authServerError = null;
+      state.info.clientIdSource = r.clientIdSource;
+    }
+    if (r) {
+      // 저장된 로그인이 있으면 새 서버로 다시 확인한다.
+      state.auth.message = null;
+      await refreshMe();
     }
     changed();
     return !!r;

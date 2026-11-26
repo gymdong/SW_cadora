@@ -66,8 +66,10 @@ const MAX_BODY = 64 * 1024;
 const sha = (s: string) => createHash('sha256').update(s).digest('hex');
 const newToken = () => randomBytes(32).toString('base64url');
 const newId = () => 'c' + randomBytes(12).toString('hex');
-// eslint-disable-next-line no-control-regex -- 이름에서 제어 문자를 지운다
-const cleanName = (s: unknown) => String(s ?? '').replace(/[\u0000-\u001f\u007f]/g, '').trim();
+// 이름에서 제어 문자, 폭 없는 문자, 방향 제어 문자(이름 위장에 쓰인다)를 지운다.
+// eslint-disable-next-line no-control-regex -- 제어 문자를 지우는 정규식이다
+const cleanName = (s: unknown) => String(s ?? '').replace(/[\u0000-\u001f\u007f\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]/g, '').trim();
+const NAME_MAX = 40;
 
 export async function startLocalAuthServer(opts: LocalAuthServerOptions): Promise<LocalAuthServer> {
   if (!CLIENT_ID_PATTERN.test(opts.clientId)) throw new Error('GitHub Client ID 형식이 올바르지 않아요.');
@@ -78,15 +80,17 @@ export async function startLocalAuthServer(opts: LocalAuthServerOptions): Promis
   const f = opts.fetch ?? fetch;
   const clientId = opts.clientId;
 
-  const loaded = opts.dataFile ? readJson<Partial<Db>>(opts.dataFile, {}) : {};
-  const db: Db = { users: loaded.users ?? {}, sessions: loaded.sessions ?? {} };
+  const loaded: unknown = opts.dataFile ? readJson<unknown>(opts.dataFile, {}) : {};
+  const obj = (v: unknown) => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
+  const db: Db = { users: obj(obj(loaded)['users']) as Db['users'], sessions: obj(obj(loaded)['sessions']) as Db['sessions'] };
   const now = Date.now();
-  for (const [k, s] of Object.entries(db.sessions)) if (s.exp < now) delete db.sessions[k]; // 만료된 세션 정리
+  for (const [k, s] of Object.entries(db.sessions)) if (!s || typeof s !== 'object' || s.exp < now || s.revoked) delete db.sessions[k]; // 만료·폐기 세션 정리
   const save = () => {
     if (opts.dataFile) writeJsonAtomic(opts.dataFile, db);
   };
   const accessTokens = new Map<string, { userId: string; family: string; exp: number }>();
-  const deviceCodes = new Map<string, { exp: number }>();
+  // 기기 코드별 상태. ghToken은 GitHub 승인 뒤 /user 읽기가 잠깐 실패했을 때 다시 시도하려고 메모리에만 잠시 둔다.
+  const deviceCodes = new Map<string, { exp: number; ghToken?: string }>();
 
   const issue = (userId: string, family = newId()) => {
     const accessToken = newToken();
@@ -182,6 +186,8 @@ export async function startLocalAuthServer(opts: LocalAuthServerOptions): Promis
         deviceCodes.delete(key);
         return fail(res, 410, 'device_expired', '기기 코드가 만료됐어요.');
       }
+      let ghToken = dev.ghToken;
+      if (!ghToken) {
       let g;
       try {
         g = await githubForm('/login/oauth/access_token', { client_id: clientId, device_code: deviceCode, grant_type: 'urn:ietf:params:oauth:grant-type:device_code' });
@@ -203,24 +209,31 @@ export async function startLocalAuthServer(opts: LocalAuthServerOptions): Promis
             deviceCodes.delete(key);
             return fail(res, 403, 'device_denied', 'GitHub에서 로그인을 거부했어요.');
           case 'device_flow_disabled':
-            return fail(res, 503, 'provider_unavailable', 'OAuth App에서 Device Flow가 꺼져 있어요(Enable Device Flow를 켜세요).');
+            deviceCodes.delete(key);
+            return fail(res, 400, 'provider_rejected', 'OAuth App에서 Device Flow가 꺼져 있어요(Enable Device Flow를 켜세요).');
           default:
-            return fail(res, 503, 'provider_unavailable', `GitHub 응답: ${typeof d['error'] === 'string' ? d['error'] : `HTTP ${g.status}`}`);
+            // 설정 오류(incorrect_client_credentials, unsupported_grant_type 등)는 다시 물어도 바뀌지 않으니 끝낸다.
+            if (g.status >= 500) return fail(res, 503, 'provider_unavailable', 'GitHub이 잠시 응답하지 않아요.');
+            deviceCodes.delete(key);
+            return fail(res, 400, 'provider_rejected', `GitHub이 로그인을 거절했어요(${typeof d['error'] === 'string' ? d['error'] : `HTTP ${g.status}`}). 다시 시도해 주세요.`);
         }
       }
-      deviceCodes.delete(key);
+      ghToken = d['access_token'];
+      dev.ghToken = ghToken;
+      }
       let gu: Record<string, unknown> | null;
       try {
-        gu = await githubUser(d['access_token']); // 공개 프로필만 읽고 GitHub 토큰은 버린다
+        gu = await githubUser(ghToken); // 공개 프로필만 읽고 GitHub 토큰은 버린다
       } catch {
         gu = null;
       }
-      if (!gu || (typeof gu['id'] !== 'number' && typeof gu['id'] !== 'string')) return fail(res, 503, 'provider_unavailable', 'GitHub 사용자 정보를 읽지 못했어요.');
+      if (!gu || (typeof gu['id'] !== 'number' && typeof gu['id'] !== 'string')) return fail(res, 503, 'provider_unavailable', 'GitHub 사용자 정보를 잠시 읽지 못했어요. 곧 다시 시도해요.');
+      deviceCodes.delete(key); // GitHub 토큰도 여기서 함께 버려진다
       const ghKey = String(gu['id']);
       const prev = db.users[ghKey];
       const user: UserRec = prev ?? {
         id: newId(),
-        displayName: cleanName(gu['name'] || gu['login'] || 'GitHub 사용자').slice(0, 100) || 'GitHub 사용자',
+        displayName: cleanName(gu['name'] || gu['login'] || 'GitHub 사용자').slice(0, NAME_MAX) || 'GitHub 사용자',
         avatarUrl: typeof gu['avatar_url'] === 'string' ? gu['avatar_url'] : null,
         registered: false,
       };
@@ -268,7 +281,7 @@ export async function startLocalAuthServer(opts: LocalAuthServerOptions): Promis
       const who = bearer(req);
       if (!who) return fail(res, 401, 'unauthenticated', '로그인이 필요해요.');
       const name = cleanName(body?.['displayName']);
-      if (!name || name.length > 40) return fail(res, 400, 'invalid_request', '이름은 1~40자로 적어 주세요.', { fields: [{ path: 'displayName', message: '1~40자' }] });
+      if (!name || name.length > NAME_MAX) return fail(res, 400, 'invalid_request', '이름은 1~40자로 적어 주세요.', { fields: [{ path: 'displayName', message: '1~40자' }] });
       who.user.displayName = name;
       who.user.registered = true;
       save();

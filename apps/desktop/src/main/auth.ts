@@ -93,7 +93,7 @@ function errorOf(data: unknown): { code?: string; message?: string; details?: Re
 const NOT_SENT = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'EHOSTUNREACH', 'ENETUNREACH']);
 
 /** remote: 팀 서버. local: 앱 안 임시 서버. invalid: 서버 주소 설정 오류. needs_client_id: 임시 서버에 쓸 GitHub Client ID가 없음. */
-export type ServerState = 'remote' | 'local' | 'invalid' | 'needs_client_id';
+export type ServerState = 'remote' | 'local' | 'invalid' | 'needs_client_id' | 'unavailable';
 
 export interface AuthDeps {
   /** 지금 쓸 서버. 앱 안 임시 서버는 Client ID를 넣은 뒤에 생기므로 매번 묻는다. */
@@ -189,6 +189,7 @@ export class AuthService {
 
   /** 로그인되어 있으면 내 정보(§1.2), 아니면 null. 저장된 로그인이 있는데 서버에 닿지 못하면 throw한다. */
   async me(): Promise<Me | null> {
+    if (this.restoring) await this.restoring;
     if (this.statusValue === 'authenticated' && this.access) {
       try {
         await this.loadMe();
@@ -409,6 +410,7 @@ export class AuthService {
     const s = this.deps.server();
     if (s.url) return s.url;
     if (s.state === 'needs_client_id') throw new AuthError('client_id_missing', 'GitHub 연결(OAuth App Client ID)이 아직 설정되지 않았어요.');
+    if (s.state === 'unavailable') throw new AuthError('server_unavailable', '로그인 서버를 켜지 못했어요. GitHub 연결 설정을 확인해 주세요.');
     throw new AuthError('config', 'CADORA_SERVER_URL이 올바르지 않아요. https 주소나 이 PC(localhost)의 http 주소만 쓸 수 있어요.');
   }
 

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer, request, type Server } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -6,12 +6,12 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startLocalAuthServer, type LocalAuthServer } from './local-auth-server';
 
 const CLIENT_ID = 'Ov23liUnitTestClient';
-const gh = { mode: 'approve' as 'approve' | 'deny', polls: 0, token: '', scopeAsked: false };
+const gh = { mode: 'approve' as 'approve' | 'deny' | 'disabled', polls: 0, token: '', scopeAsked: false, userFails: 0, name: '단위 테스트' };
 let fake: Server;
 let fakeUrl = '';
 
 beforeEach(async () => {
-  Object.assign(gh, { mode: 'approve', polls: 0, token: '', scopeAsked: false });
+  Object.assign(gh, { mode: 'approve', polls: 0, token: '', scopeAsked: false, userFails: 0, name: '단위 테스트' });
   fake = createServer((req, res) => {
     let body = '';
     req.on('data', (d) => (body += d));
@@ -31,6 +31,7 @@ beforeEach(async () => {
         gh.polls += 1;
         if (p.get('grant_type') !== 'urn:ietf:params:oauth:grant-type:device_code') return json(200, { error: 'unsupported_grant_type' });
         if (gh.mode === 'deny') return json(200, { error: 'access_denied' });
+        if (gh.mode === 'disabled') return json(200, { error: 'device_flow_disabled' });
         if (gh.polls === 1) return json(200, { error: 'authorization_pending' });
         if (gh.polls === 2) return json(200, { error: 'slow_down', interval: 6 });
         gh.token = 'gho_' + 'y'.repeat(36);
@@ -38,7 +39,8 @@ beforeEach(async () => {
       }
       if (req.url === '/user') {
         if (req.headers.authorization !== `Bearer ${gh.token}`) return json(401, { message: 'Bad credentials' });
-        return json(200, { id: 4242, login: 'cadora-unit', name: '단위 테스트', avatar_url: 'https://avatars.githubusercontent.com/u/4242?v=4' });
+        if (gh.userFails > 0) { gh.userFails -= 1; return json(502, { message: 'bad gateway' }); }
+        return json(200, { id: 4242, login: 'cadora-unit', name: gh.name, avatar_url: 'https://avatars.githubusercontent.com/u/4242?v=4' });
       }
       json(404, {});
     });
@@ -156,5 +158,38 @@ describe('앱 안 임시 인증 서버(API.md §7.1 + 데모 확장)', () => {
     const stored = readFileSync(file, 'utf8');
     for (const secret of [t.refreshToken, t.accessToken, r.data.refreshToken, gh.token]) expect(stored).not.toContain(secret);
     expect(stored).toMatch(/[0-9a-f]{64}/);
+  });
+
+  it('설정 오류(Device Flow 꺼짐)는 바로 끝나는 400, GitHub 프로필 조회가 잠깐 실패하면 다음 폴링에서 이어진다', async () => {
+    const s = await start();
+    const call = client(s.url);
+    gh.mode = 'disabled';
+    const d1 = await call('POST', '/auth/github/device', {});
+    expect(await call('POST', '/auth/github/poll', { deviceCode: d1.data.deviceCode })).toMatchObject({ status: 400, data: { error: { code: 'provider_rejected' } } });
+    gh.mode = 'approve';
+    gh.userFails = 1;
+    const d2 = await call('POST', '/auth/github/device', {});
+    gh.polls = 2;
+    expect((await call('POST', '/auth/github/poll', { deviceCode: d2.data.deviceCode })).status).toBe(503);
+    const ok = await call('POST', '/auth/github/poll', { deviceCode: d2.data.deviceCode });
+    expect(ok).toMatchObject({ status: 200, data: { user: { displayName: '단위 테스트' } } });
+    expect(gh.polls).toBe(3); // 두 번째 폴링은 GitHub에 토큰을 다시 묻지 않았다
+  });
+
+  it('GitHub 이름은 40자로 자르고 보이지 않는 문자·방향 제어 문자를 지운다', async () => {
+    gh.name = '\u202e' + '가'.repeat(60) + '\u200b';
+    const s = await start();
+    const t = await signIn(client(s.url));
+    expect(t.user.displayName).toBe('가'.repeat(40));
+    const p = await client(s.url)('PATCH', '/me', { displayName: 'ab\u202ecd\u2066' }, t.accessToken);
+    expect(p.data.displayName).toBe('abcd');
+  });
+
+  it('저장 파일이 망가져 있어도(null) 새로 시작한다', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cadora-local-auth-'));
+    const file = join(dir, 'local-auth.json');
+    writeFileSync(file, 'null');
+    const s = await start(file);
+    expect((await signIn(client(s.url))).accessToken).toEqual(expect.any(String));
   });
 });

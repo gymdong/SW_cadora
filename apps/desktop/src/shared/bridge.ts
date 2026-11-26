@@ -109,9 +109,13 @@ export interface RuntimeInfo {
   authServer: string | null;
   /** remote: 팀 서버, local: 앱 안 임시 서버(계정이 이 PC에만 있음), invalid: 주소 설정 오류, needs_client_id: GitHub 연결 설정 필요. */
   authServerState: AuthServerState;
+  /** 앱 안 임시 서버를 켜지 못한 이유(unavailable일 때). */
+  authServerError: string | null;
+  /** Client ID 출처. user일 때만 앱에서 다시 설정할 수 있다. */
+  clientIdSource: 'env' | 'build' | 'user' | null;
 }
 
-export type AuthServerState = 'remote' | 'local' | 'invalid' | 'needs_client_id';
+export type AuthServerState = 'remote' | 'local' | 'invalid' | 'needs_client_id' | 'unavailable';
 
 /** 로그인 상태(API.md §3 "team:authChanged"). */
 export type AuthStatus = 'pending' | 'authenticated' | 'expired' | 'denied' | 'logged_out';
@@ -221,7 +225,7 @@ export interface CadoraBridge {
     /** 데모: 가입 마무리(팀에 보일 이름 확정). */
     completeSignup(displayName: string): Promise<Me>;
     /** 데모: 앱 안 임시 서버에 쓸 GitHub OAuth App Client ID(비밀값 아님)를 저장하고 서버를 켠다. */
-    setGithubClientId(clientId: string): Promise<{ authServer: string | null; authServerState: AuthServerState }>;
+    setGithubClientId(clientId: string): Promise<{ authServer: string | null; authServerState: AuthServerState; clientIdSource: RuntimeInfo['clientIdSource'] }>;
   };
 
   on<E extends CadoraEventName>(event: E, cb: (payload: CadoraEvents[E]) => void): () => void;
