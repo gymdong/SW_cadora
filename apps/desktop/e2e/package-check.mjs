@@ -99,7 +99,8 @@ const files = asar.listPackage(archive, { isPack: false }).map((f) => f.replace(
 const own = files.filter((f) => !f.startsWith('node_modules/'));
 const badOwn = own.filter((f) => /^(src|e2e|dev|resources)\//.test(f) || /\.(test|spec)\.|\.map$|(^|\/)\.env|tsconfig|\.ts$/.test(f));
 check('asar에는 빌드 결과(out/)와 package.json만(소스·테스트·개발용 파일·소스맵 없음)', badOwn.length === 0 && own.every((f) => f.startsWith('out/') || f === 'package.json' || !f.includes('.')), { own: own.length, bad: badOwn.slice(0, 10) });
-const modules = [...new Set(files.filter((f) => f.startsWith('node_modules/')).map((f) => f.split('/').slice(0, f.startsWith('node_modules/@') ? 3 : 2).join('/')))];
+// 범위 폴더 자체(node_modules/@parcel)는 모듈이 아니라서 뺀다.
+const modules = [...new Set(files.filter((f) => f.startsWith('node_modules/') && !/^node_modules\/@[^/]+$/.test(f)).map((f) => f.split('/').slice(0, f.startsWith('node_modules/@') ? 3 : 2).join('/')))];
 check('함께 들어간 모듈은 네이티브 의존성뿐', modules.every((m) => /^node_modules\/(node-pty|node-addon-api|@parcel\/watcher(-win32-x64)?|detect-libc|is-glob|is-extglob|micromatch|braces|fill-range|to-regex-range|is-number|picomatch|node-gyp-build)$/.test(m)), modules);
 
 const unpackedDir = join(resources, 'app.asar.unpacked');
